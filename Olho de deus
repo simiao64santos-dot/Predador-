@@ -1,558 +1,1241 @@
 --[[
-    OLHO DE DEUS v3.1
-    UI standalone — zero dependência externa
-    Parent seguro: gethui() → CoreGui → PlayerGui
-    Compatível: Delta, Fluxus, Arceus, Hydrogen, Codex (mobile)
+    OLHO DE DEUS v5.5 — OMEGA COMPLETO
+    Sistema de inspeção, modificação e monitoramento total
+    Standalone. Zero dependência externa.
+    Tabs: SCANNER | EDITOR | CONSOLE | INJETOR | REMOTES | BYPASS | DUMP | TELEPORT | MONITOR
 ]]
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInput  = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local VirtualUser  = game:GetService("VirtualUser")
-local LocalPlayer  = Players.LocalPlayer
-local Camera       = workspace.CurrentCamera
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local UserInput   = game:GetService("UserInputService")
+local Tween       = game:GetService("TweenService")
+local LogService  = game:GetService("LogService")
+local Replicated  = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+local Camera      = workspace.CurrentCamera
 
 -- ============================================================
--- TEMA HACKER
+-- TEMA
 -- ============================================================
-local Tema = {
-    Fundo    = Color3.fromRGB(8, 12, 10),
-    Painel   = Color3.fromRGB(12, 20, 16),
+local T = {
+    Fundo    = Color3.fromRGB(4, 6, 5),
+    Painel   = Color3.fromRGB(9, 14, 11),
+    Painel2  = Color3.fromRGB(13, 20, 16),
+    Painel3  = Color3.fromRGB(18, 28, 22),
     Borda    = Color3.fromRGB(0, 255, 140),
-    Texto    = Color3.fromRGB(200, 255, 220),
-    TextoDim = Color3.fromRGB(90, 140, 110),
-    Acerto   = Color3.fromRGB(0, 255, 140),
+    BordaDim = Color3.fromRGB(0, 90, 55),
+    Texto    = Color3.fromRGB(180, 255, 210),
+    Dim      = Color3.fromRGB(0, 120, 75),
+    Alerta   = Color3.fromRGB(255, 200, 0),
     Erro     = Color3.fromRGB(255, 60, 60),
-    Slider   = Color3.fromRGB(0, 180, 100),
+    Hacker   = Color3.fromRGB(0, 255, 140),
+    Perigo   = Color3.fromRGB(255, 30, 30),
 }
 
 -- ============================================================
--- CONFIG
+-- ESTADO
 -- ============================================================
-local Cfg = {
-    ESP = false, ESPTeam = true, ESPBox = true, ESPName = true, ESPDist = true, ESPHealth = true,
-    Aimbot = false, AimbotFOV = 250, AimbotSmooth = 0.35, AimbotWall = false, AimbotPart = "Head",
-    SpeedOn = false, SpeedVal = 60, JumpOn = false, JumpVal = 100,
-    Fly = false, FlySpeed = 60, AntiAFK = true, AntiVoid = true,
+local State = {
+    alvo       = nil,
+    historico  = {},
+    hooks      = {},
+    bypassOn   = false,
+    autoExec   = {},
 }
 
+local function logAdd(msg, tipo)
+    tipo = tipo or "info"
+    local cor = T.Hacker
+    if tipo == "erro" then cor = T.Erro
+    elseif tipo == "alerta" then cor = T.Alerta
+    elseif tipo == "dim" then cor = T.Dim
+    elseif tipo == "perigo" then cor = T.Perigo end
+    table.insert(State.historico, {texto = msg, cor = cor})
+    if #State.historico > 500 then table.remove(State.historico, 1) end
+end
+
 -- ============================================================
--- PARENT SEGURO (resolve CoreGui bloqueado no mobile)
+-- PARENT SEGURO
 -- ============================================================
 local _parent
 do
     local ok, hui = pcall(function() return gethui() end)
-    if ok and hui then
-        _parent = hui
+    if ok and hui then _parent = hui
     else
         local ok2, core = pcall(function() return game:GetService("CoreGui") end)
-        if ok2 and core then
-            _parent = core
-        else
-            _parent = LocalPlayer:WaitForChild("PlayerGui")
-        end
+        _parent = (ok2 and core) or LocalPlayer:WaitForChild("PlayerGui")
     end
 end
-
--- remove UI antiga se existir
-for _, obj in ipairs(_parent:GetChildren()) do
-    if obj.Name == "OlhoDeDeus" then obj:Destroy() end
+for _, o in ipairs(_parent:GetChildren()) do
+    if o.Name == "OlhoDeDeus" then o:Destroy() end
 end
 
 -- ============================================================
 -- HELPERS
 -- ============================================================
-local function novo(classe, props, pai)
-    local i = Instance.new(classe)
+local function novo(c, props, pai)
+    local i = Instance.new(c)
     for k, v in pairs(props or {}) do i[k] = v end
     if pai then i.Parent = pai end
     return i
 end
+local function corner(p, r) return novo("UICorner", {CornerRadius = UDim.new(0, r or 5)}, p) end
+local function stroke(p, c, t) return novo("UIStroke", {Color = c or T.Borda, Thickness = t or 1}, p) end
 
 local function drag(frame, handle)
     handle = handle or frame
-    local dragging, start, startPos
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; start = input.Position; startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+    local on, sp, spPos
+    handle.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            on = true; sp = i.Position; spPos = frame.Position
+            i.Changed:Connect(function()
+                if i.UserInputState == Enum.UserInputState.End then on = false end
             end)
         end
     end)
-    handle.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch) and dragging then
-            local d = input.Position - start
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-                                       startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    handle.InputChanged:Connect(function(i)
+        if on and (i.UserInputType == Enum.UserInputType.MouseMovement
+        or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - sp
+            frame.Position = UDim2.new(spPos.X.Scale, spPos.X.Offset + d.X,
+                                       spPos.Y.Scale, spPos.Y.Offset + d.Y)
         end
     end)
 end
 
-local function corner(pai, r) return novo("UICorner", {CornerRadius = UDim.new(0, r or 6)}, pai) end
-local function stroke(pai, cor, esp) return novo("UIStroke", {Color = cor or Tema.Borda, Thickness = esp or 1}, pai) end
-
 -- ============================================================
--- SCREENGUI
+-- ROOT
 -- ============================================================
 local gui = novo("ScreenGui", {
-    Name = "OlhoDeDeus",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    DisplayOrder = 999,
+    Name = "OlhoDeDeus", ResetOnSpawn = false,
+    IgnoreGuiInset = true, DisplayOrder = 999,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, _parent)
 
--- ============================================================
--- BOTÃO FLUTUANTE
--- ============================================================
 local btnAbrir = novo("TextButton", {
-    Name = "BtnAbrir",
-    Size = UDim2.new(0, 58, 0, 58),
-    Position = UDim2.new(0, 20, 0.5, -29),
-    BackgroundColor3 = Tema.Painel,
-    Text = "OLHO",
-    TextColor3 = Tema.Borda,
-    TextSize = 13,
-    Font = Enum.Font.Code,
-    BorderSizePixel = 0,
-    ZIndex = 10,
+    Size = UDim2.new(0, 64, 0, 64),
+    Position = UDim2.new(0, 18, 0.5, -32),
+    BackgroundColor3 = T.Painel, Text = "◉\nOMEGA",
+    TextColor3 = T.Borda, TextSize = 12, Font = Enum.Font.Code,
+    BorderSizePixel = 0, ZIndex = 10,
 }, gui)
-corner(btnAbrir, 30)
-stroke(btnAbrir, Tema.Borda, 2)
+corner(btnAbrir, 32); stroke(btnAbrir, T.Borda, 2)
 drag(btnAbrir)
 
--- ============================================================
--- PAINEL
--- ============================================================
 local painel = novo("Frame", {
-    Name = "Painel",
-    Size = UDim2.new(0, 380, 0, 460),
-    Position = UDim2.new(0.5, -190, 0.5, -230),
-    BackgroundColor3 = Tema.Fundo,
-    BorderSizePixel = 0,
-    ZIndex = 5,
-    Visible = false,
+    Size = UDim2.new(0, 520, 0, 640),
+    Position = UDim2.new(0.5, -260, 0.5, -320),
+    BackgroundColor3 = T.Fundo, BorderSizePixel = 0, ZIndex = 5, Visible = false,
 }, gui)
-corner(painel, 10)
-stroke(painel, Tema.Borda, 2)
+corner(painel, 8); stroke(painel, T.Borda, 2)
 
 -- header
 local header = novo("Frame", {
-    Size = UDim2.new(1, 0, 0, 46),
-    BackgroundColor3 = Tema.Painel,
-    BorderSizePixel = 0,
-    ZIndex = 6,
+    Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6,
 }, painel)
-corner(header, 10)
-novo("Frame", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.new(0, 0, 1, -12),
-    BackgroundColor3 = Tema.Painel, BorderSizePixel = 0, ZIndex = 6}, header)
+corner(header, 8)
+novo("Frame", {Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 1, -10),
+    BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6}, header)
 
 novo("TextLabel", {
-    Size = UDim2.new(1, -60, 1, 0), Position = UDim2.new(0, 15, 0, 0),
-    BackgroundTransparency = 1, Text = "◉  OLHO DE DEUS  ◉",
-    TextColor3 = Tema.Borda, TextSize = 17, Font = Enum.Font.Code,
+    Size = UDim2.new(1, -180, 1, 0), Position = UDim2.new(0, 14, 0, 0),
+    BackgroundTransparency = 1, Text = "◉ OLHO DE DEUS :: OMEGA",
+    TextColor3 = T.Borda, TextSize = 15, Font = Enum.Font.Code,
     TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
 }, header)
 
-local btnFechar = novo("TextButton", {
-    Size = UDim2.new(0, 30, 0, 30), Position = UDim2.new(1, -38, 0, 8),
-    BackgroundColor3 = Tema.Erro, Text = "X", TextColor3 = Color3.new(1,1,1),
-    TextSize = 16, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
+local statusHdr = novo("TextLabel", {
+    Size = UDim2.new(0, 120, 1, 0), Position = UDim2.new(1, -160, 0, 0),
+    BackgroundTransparency = 1, Text = "● ONLINE",
+    TextColor3 = T.Hacker, TextSize = 10, Font = Enum.Font.Code,
+    TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 7,
 }, header)
-corner(btnFechar, 6)
 
+local btnFechar = novo("TextButton", {
+    Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(1, -36, 0, 9),
+    BackgroundColor3 = T.Erro, Text = "X", TextColor3 = Color3.new(1,1,1),
+    TextSize = 14, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
+}, header)
+corner(btnFechar, 5)
 drag(painel, header)
 
--- ============================================================
--- ABAS
--- ============================================================
-local abasNomes = {"Principal", "Visual", "Combate", "Movimento", "Diversos"}
+-- barra de abas
+local abasNomes = {"SCANNER","EDITOR","CONSOLE","INJETOR","REMOTES","BYPASS","DUMP","TELEPORT","MONITOR"}
 local abas, conteudos = {}, {}
 
 local barra = novo("Frame", {
-    Size = UDim2.new(1, -20, 0, 32), Position = UDim2.new(0, 10, 0, 52),
-    BackgroundColor3 = Tema.Painel, BorderSizePixel = 0, ZIndex = 6,
+    Size = UDim2.new(1, -16, 0, 32), Position = UDim2.new(0, 8, 0, 52),
+    BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6,
 }, painel)
-corner(barra, 6)
+corner(barra, 5)
 
-local container = novo("ScrollingFrame", {
-    Size = UDim2.new(1, -20, 1, -100), Position = UDim2.new(0, 10, 0, 92),
-    BackgroundTransparency = 1, BorderSizePixel = 0,
-    ScrollBarThickness = 4, ScrollBarImageColor3 = Tema.Borda,
-    CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 6,
+local container = novo("Frame", {
+    Size = UDim2.new(1, -16, 1, -92), Position = UDim2.new(0, 8, 0, 90),
+    BackgroundTransparency = 1, ZIndex = 6,
 }, painel)
 
 local function mostrarAba(nome)
     for n, f in pairs(conteudos) do f.Visible = (n == nome) end
     for n, b in pairs(abas) do
-        if n == nome then
-            b.BackgroundColor3 = Tema.Acerto; b.TextColor3 = Color3.new(0,0,0)
-        else
-            b.BackgroundColor3 = Tema.Fundo; b.TextColor3 = Tema.TextoDim
-        end
+        if n == nome then b.BackgroundColor3 = T.Hacker; b.TextColor3 = Color3.new(0,0,0)
+        else b.BackgroundColor3 = T.Fundo; b.TextColor3 = T.Dim end
     end
 end
 
 local larg = 1 / #abasNomes
 for i, nome in ipairs(abasNomes) do
-    local btn = novo("TextButton", {
-        Size = UDim2.new(larg, -2, 1, 0), Position = UDim2.new(larg * (i-1), 1, 0, 0),
-        BackgroundColor3 = Tema.Fundo, Text = nome, TextColor3 = Tema.TextoDim,
-        TextSize = 12, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
+    local b = novo("TextButton", {
+        Size = UDim2.new(larg, -1, 1, 0), Position = UDim2.new(larg*(i-1), 0, 0, 0),
+        BackgroundColor3 = T.Fundo, Text = nome, TextColor3 = T.Dim,
+        TextSize = 9, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
     }, barra)
-    corner(btn, 4)
-    abas[nome] = btn
-
-    local frame = novo("Frame", {
-        Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1,
-        AutomaticSize = Enum.AutomaticSize.Y, Visible = false, ZIndex = 6,
+    corner(b, 3)
+    abas[nome] = b
+    local f = novo("Frame", {
+        Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, ZIndex = 6,
     }, container)
-    conteudos[nome] = frame
-
-    btn.MouseButton1Click:Connect(function() mostrarAba(nome) end)
+    conteudos[nome] = f
+    b.MouseButton1Click:Connect(function() mostrarAba(nome) end)
 end
 
 -- ============================================================
 -- COMPONENTES
 -- ============================================================
-local function novoBotao(pai, texto, cb)
+local function botao(pai, texto, cb, cor)
     local b = novo("TextButton", {
-        Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = Tema.Painel,
-        Text = texto, TextColor3 = Tema.Texto, TextSize = 13,
+        Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.Painel,
+        Text = texto, TextColor3 = cor or T.Texto, TextSize = 12,
         Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
+        TextXAlignment = Enum.TextXAlignment.Left,
     }, pai)
-    corner(b, 5); stroke(b, Tema.Borda, 1)
+    novo("UIPadding", {PaddingLeft = UDim.new(0, 10)}, b)
+    corner(b, 4); stroke(b, T.BordaDim, 1)
     b.MouseButton1Click:Connect(cb)
     return b
 end
 
-local function novoToggle(pai, texto, inicial, cb)
-    local holder = novo("Frame", {
-        Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = Tema.Painel,
-        BorderSizePixel = 0, ZIndex = 6,
+local function terminal(pai, altura)
+    local s = novo("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 0, altura or 200), BackgroundColor3 = T.Painel,
+        BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = T.BordaDim,
+        CanvasSize = UDim2.new(0,0,0,0), ZIndex = 6, AutomaticCanvasSize = Enum.AutomaticSize.Y,
     }, pai)
-    corner(holder, 5)
+    corner(s, 5); stroke(s, T.BordaDim, 1)
+    novo("UIListLayout", {Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder}, s)
+    novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 6),
+        PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 4)}, s)
+    return s
+end
+
+local function escreve(pai, txt, cor, ord)
+    novo("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1,
+        Text = txt, TextColor3 = cor or T.Texto, TextSize = 11,
+        Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 7, LayoutOrder = ord or 0, TextTruncate = Enum.TextTruncate.AtEnd,
+    }, pai)
+end
+
+-- ============================================================
+-- ABA: SCANNER
+-- ============================================================
+local sc = conteudos["SCANNER"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, sc)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, sc)
+
+local scanBtns = novo("Frame", {Size = UDim2.new(1, 0, 0, 200), BackgroundTransparency = 1, LayoutOrder = 1}, sc)
+novo("UIGridLayout", {CellSize = UDim2.new(0.5, -3, 0, 26), CellPadding = UDim2.new(0, 6, 0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, scanBtns)
+
+local resultadosScroll = terminal(sc, 320)
+resultadosScroll.LayoutOrder = 2
+
+local infoLabel = novo("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1,
+    Text = "> Aguardando scan...", TextColor3 = T.Dim,
+    TextSize = 11, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 3,
+}, sc)
+
+local ord = 0
+local function addResult(nome, classe, path, inst)
+    ord += 1
+    local b = novo("TextButton", {
+        Size = UDim2.new(1, -4, 0, 24), BackgroundColor3 = T.Painel2,
+        Text = "", BorderSizePixel = 0, LayoutOrder = ord, ZIndex = 7,
+    }, resultadosScroll)
+    corner(b, 4)
+    novo("TextLabel", {
+        Size = UDim2.new(0, 90, 1, 0), Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1, Text = classe, TextColor3 = T.Hacker,
+        TextSize = 10, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 8, TextTruncate = Enum.TextTruncate.AtEnd,
+    }, b)
+    novo("TextLabel", {
+        Size = UDim2.new(1, -100, 1, 0), Position = UDim2.new(0, 100, 0, 0),
+        BackgroundTransparency = 1, Text = nome, TextColor3 = T.Texto,
+        TextSize = 11, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 8, TextTruncate = Enum.TextTruncate.AtEnd,
+    }, b)
+    b.MouseButton1Click:Connect(function()
+        State.alvo = inst
+        logAdd("[SEL] " .. path, "info")
+        mostrarAba("EDITOR")
+        if _G.ODD_RefreshEditor then _G.ODD_RefreshEditor() end
+    end)
+end
+
+local function limpaResultados()
+    for _, v in ipairs(resultadosScroll:GetChildren()) do
+        if v:IsA("TextButton") then v:Destroy() end
+    end
+    ord = 0
+end
+
+local function scan(escopo, filtro, label)
+    limpaResultados()
+    local t0 = os.clock()
+    local count = 0
+    for _, obj in ipairs(escopo:GetDescendants()) do
+        if not filtro or obj:IsA(filtro) then
+            count += 1
+            if count <= 400 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
+        end
+    end
+    local dt = math.floor((os.clock() - t0) * 1000)
+    infoLabel.Text = string.format("> %s :: %d objs (%dms)", label, count, dt)
+    logAdd("[SCAN] " .. label .. " -> " .. count, "info")
+end
+
+local scans = {
+    {"▸ WORKSPACE",    function() scan(workspace, nil, "Workspace") end,            T.Hacker},
+    {"▸ REPLICATED",   function() scan(Replicated, nil, "Replicated") end,          T.Hacker},
+    {"▸ INVISÍVEIS",   function()
+        limpaResultados()
+        local n = 0
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and (obj.Transparency >= 1 or obj.Massless) then
+                n += 1
+                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
+            end
+        end
+        infoLabel.Text = "> Invisíveis: " .. n
+        logAdd("[SCAN] Invisíveis: " .. n, "alerta")
+    end, T.Alerta},
+    {"▸ SCRIPTS",      function() scan(game, "LuaSourceContainer", "Scripts") end,   T.Hacker},
+    {"▸ GUI OCULTA",   function()
+        limpaResultados()
+        local n = 0
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("GuiObject") and not obj.Visible then
+                n += 1
+                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
+            end
+        end
+        infoLabel.Text = "> GUI oculta: " .. n
+    end, T.Alerta},
+    {"▸ TOOLS/HRP",    function()
+        limpaResultados()
+        local n = 0
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then n += 1; addResult(p.Name, "HRP", hrp:GetFullName(), hrp) end
+                for _, t in ipairs(p.Character:GetChildren()) do
+                    if t:IsA("Tool") then n += 1; addResult(t.Name, "Tool", t:GetFullName(), t) end
+                end
+            end
+        end
+        infoLabel.Text = "> Tools/HRP: " .. n
+    end, T.Hacker},
+    {"▸ SONS/EFEITOS", function()
+        limpaResultados()
+        local n = 0
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Sound") or obj:IsA("ParticleEmitter") or obj:IsA("Beam") then
+                n += 1
+                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
+            end
+        end
+        infoLabel.Text = "> Sons/efeitos: " .. n
+    end, T.Hacker},
+    {"▸ ITENS (heurística)", function()
+        limpaResultados()
+        local pads = {"Coin","Gem","Chest","Money","Cash","Drop","Loot","Orb","Crystal","Reward","Item"}
+        local n = 0
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                for _, pat in ipairs(pads) do
+                    if obj.Name:find(pat, 1, true) then
+                        n += 1
+                        if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
+                        break
+                    end
+                end
+            end
+        end
+        infoLabel.Text = "> Itens: " .. n
+        logAdd("[SCAN] Itens coletáveis: " .. n, "alerta")
+    end, T.Alerta},
+    {"▸ MODELOS",      function() scan(workspace, "Model", "Models") end,           T.Hacker},
+}
+
+for i, entry in ipairs(scans) do
+    botao(scanBtns, entry[1], entry[2], entry[3]).LayoutOrder = i
+end
+
+-- ============================================================
+-- ABA: EDITOR
+-- ============================================================
+local ed = conteudos["EDITOR"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, ed)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, ed)
+
+local alvoEd = novo("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1,
+    Text = "> Alvo: (nenhum)", TextColor3 = T.Alerta,
+    TextSize = 11, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 1, TextTruncate = Enum.TextTruncate.AtEnd,
+}, ed)
+
+local edScroll = terminal(ed, 540)
+edScroll.LayoutOrder = 2
+
+local edOrdem = 0
+local function edClear()
+    for _, v in ipairs(edScroll:GetChildren()) do
+        if v:IsA("Frame") or v:IsA("TextButton") then v:Destroy() end
+    end
+    edOrdem = 0
+end
+
+local function edPropriedade(nome, valorAtual, tipo)
+    edOrdem += 1
+    local row = novo("Frame", {
+        Size = UDim2.new(1, -4, 0, 30), BackgroundColor3 = T.Painel2,
+        BorderSizePixel = 0, LayoutOrder = edOrdem, ZIndex = 7,
+    }, edScroll)
+    corner(row, 4)
 
     novo("TextLabel", {
-        Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 12, 0, 0),
-        BackgroundTransparency = 1, Text = texto, TextColor3 = Tema.Texto,
-        TextSize = 13, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
-    }, holder)
+        Size = UDim2.new(0, 140, 1, 0), Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1, Text = nome, TextColor3 = T.Hacker,
+        TextSize = 11, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 8, TextTruncate = Enum.TextTruncate.AtEnd,
+    }, row)
 
-    local estado = inicial
-    local track = novo("Frame", {
-        Size = UDim2.new(0, 46, 0, 22), Position = UDim2.new(1, -56, 0.5, -11),
-        BackgroundColor3 = estado and Tema.Acerto or Tema.Fundo,
-        BorderSizePixel = 0, ZIndex = 7,
-    }, holder)
-    corner(track, 11); stroke(track, Tema.Borda, 1)
+    local input = novo("TextBox", {
+        Size = UDim2.new(1, -150, 1, -6), Position = UDim2.new(0, 148, 0, 3),
+        BackgroundColor3 = T.Painel, Text = tostring(valorAtual),
+        TextColor3 = T.Texto, TextSize = 11, Font = Enum.Font.Code,
+        BorderSizePixel = 0, ZIndex = 8, TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false,
+    }, row)
+    corner(input, 3); stroke(input, T.BordaDim, 1)
+    novo("UIPadding", {PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6)}, input)
 
-    local knob = novo("Frame", {
-        Size = UDim2.new(0, 18, 0, 18),
-        Position = estado and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9),
-        BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 8,
-    }, track)
-    corner(knob, 9)
-
-    local click = novo("TextButton", {Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "", ZIndex = 9}, holder)
-    click.MouseButton1Click:Connect(function()
-        estado = not estado
-        TweenService:Create(track, TweenInfo.new(0.15), {BackgroundColor3 = estado and Tema.Acerto or Tema.Fundo}):Play()
-        TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = estado and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-        }):Play()
-        cb(estado)
+    input.FocusLost:Connect(function()
+        local v = input.Text
+        local ok, err = pcall(function()
+            if not State.alvo then return end
+            local convertido
+            if tipo == "number" then convertido = tonumber(v)
+            elseif tipo == "boolean" then convertido = (v:lower() == "true" or v == "1")
+            elseif tipo == "color" then
+                local r, g, b = v:match("(%d+)[,%s]+(%d+)[,%s]+(%d+)")
+                if r then convertido = Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) end
+            elseif tipo == "vector3" then
+                local x, y, z = v:match("([%-%d%.]+)[,%s]+([%-%d%.]+)[,%s]+([%-%d%.]+)")
+                if x then convertido = Vector3.new(tonumber(x), tonumber(y), tonumber(z)) end
+            else convertido = v end
+            if convertido ~= nil then State.alvo[nome] = convertido end
+            logAdd("[EDIT] " .. nome .. " = " .. tostring(convertido), "info")
+        end)
+        if not ok then logAdd("[ERRO] " .. tostring(err), "erro") end
     end)
-    return holder
 end
 
-local function novoSlider(pai, texto, minV, maxV, inicial, cb)
-    local holder = novo("Frame", {
-        Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = Tema.Painel,
-        BorderSizePixel = 0, ZIndex = 6,
-    }, pai)
-    corner(holder, 5)
-
-    local lbl = novo("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 20), Position = UDim2.new(0, 12, 0, 4),
-        BackgroundTransparency = 1, Text = texto .. ": " .. tostring(inicial),
-        TextColor3 = Tema.Texto, TextSize = 13, Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
-    }, holder)
-
-    local track = novo("Frame", {
-        Size = UDim2.new(1, -24, 0, 6), Position = UDim2.new(0, 12, 0, 36),
-        BackgroundColor3 = Tema.Fundo, BorderSizePixel = 0, ZIndex = 7,
-    }, holder)
-    corner(track, 3)
-
-    local pct = (inicial - minV) / (maxV - minV)
-    local fill = novo("Frame", {
-        Size = UDim2.new(pct, 0, 1, 0), BackgroundColor3 = Tema.Slider,
-        BorderSizePixel = 0, ZIndex = 8,
-    }, track)
-    corner(fill, 3)
-
-    local dragging = false
-    local click = novo("TextButton", {Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "", ZIndex = 9}, track)
-
-    local function atualizar(input)
-        local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-        local val = math.floor(minV + (maxV - minV) * rel)
-        fill.Size = UDim2.new(rel, 0, 1, 0)
-        lbl.Text = texto .. ": " .. tostring(val)
-        cb(val)
+_G.ODD_RefreshEditor = function()
+    if not State.alvo then
+        alvoEd.Text = "> Alvo: (nenhum) — selecione no Scanner"
+        return
     end
+    alvoEd.Text = "> Alvo: " .. State.alvo.ClassName .. " :: " .. State.alvo:GetFullName()
+    edClear()
 
-    click.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; atualizar(input)
+    local props = {
+        "Name","Transparency","Reflectance","CanCollide","Anchored","Massless",
+        "Material","Color","Size","Position","Orientation","CFrame","Velocity",
+        "WalkSpeed","JumpPower","Health","MaxHealth","Visible","Enabled",
+        "Brightness","Range","Volume","Playing","Looped","Text","TextColor3",
+        "TextSize","BackgroundColor3","BackgroundTransparency","Image",
+        "Value","Amount","Duration",
+    }
+    for _, p in ipairs(props) do
+        local ok, v = pcall(function() return State.alvo[p] end)
+        if ok and v ~= nil then
+            local tipo = type(v)
+            if tipo == "number" then edPropriedade(p, v, "number")
+            elseif tipo == "boolean" then edPropriedade(p, v, "boolean")
+            elseif tipo == "string" then edPropriedade(p, v, "string")
+            elseif tipo == "userdata" then
+                local ts = tostring(v)
+                if ts:find("Color3") then edPropriedade(p, ts, "color")
+                elseif ts:find("Vector3") then edPropriedade(p, ts, "vector3") end
+            end
         end
-    end)
-    UserInput.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch) then
-            atualizar(input)
-        end
-    end)
-    UserInput.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    return holder
+    end
 end
 
-local function lista(aba, gap)
-    novo("UIListLayout", {
-        Padding = UDim.new(0, gap or 6), SortOrder = Enum.SortOrder.LayoutOrder,
-    }, conteudos[aba])
-    novo("UIPadding", {
-        PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4),
-        PaddingRight = UDim.new(0, 4),
-    }, conteudos[aba])
-end
+botao(ed, "▸ DESTACAR alvo (box)", function()
+    if not State.alvo then logAdd("sem alvo", "erro"); return end
+    if not State.alvo:IsA("BasePart") then logAdd("alvo não é part", "erro"); return end
+    local part = State.alvo
+    local orig = part.Color
+    part.Color = Color3.fromRGB(255, 0, 0)
+    task.delay(1.5, function() pcall(function() part.Color = orig end) end)
+end, T.Alerta).LayoutOrder = 3
+
+botao(ed, "▸ CLONAR alvo no player", function()
+    if not State.alvo then logAdd("sem alvo", "erro"); return end
+    local ok, err = pcall(function()
+        local clone = State.alvo:Clone()
+        if not LocalPlayer.Character then return end
+        clone.Parent = LocalPlayer.Character
+        if clone:IsA("BasePart") then
+            clone.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+        end
+        logAdd("[CLONE] " .. clone.Name, "alerta")
+    end)
+    if not ok then logAdd("[ERRO] " .. tostring(err), "erro") end
+end, T.Alerta).LayoutOrder = 4
 
 -- ============================================================
--- CONTEÚDO DAS ABAS
+-- ABA: CONSOLE
 -- ============================================================
-lista("Principal", 8)
+local co = conteudos["CONSOLE"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, co)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, co)
+
+local entrada = novo("TextBox", {
+    Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.Painel,
+    Text = "", PlaceholderText = "> lua... (OBJ = alvo)",
+    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim, TextSize = 12,
+    Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+    LayoutOrder = 1,
+}, co)
+corner(entrada, 4); stroke(entrada, T.BordaDim, 1)
+novo("UIPadding", {PaddingLeft = UDim.new(0, 8)}, entrada)
+
+local coScroll = terminal(co, 560)
+coScroll.LayoutOrder = 2
+
+local coOrdem = 0
+local function coPrint(txt, cor)
+    coOrdem += 1
+    escreve(coScroll, txt, cor or T.Texto, coOrdem)
+    pcall(function() coScroll.CanvasPosition = Vector2.new(0, coScroll.AbsoluteCanvasSize.Y) end)
+end
+
+local function executa(codigo)
+    coPrint("> " .. codigo, T.Hacker)
+    local ok, err = pcall(function()
+        local env = setmetatable({}, {__index = getfenv()})
+        env.OBJ = State.alvo
+        env.print = function(...)
+            local p = {}
+            for i = 1, select("#", ...) do p[i] = tostring(select(i, ...)) end
+            coPrint(table.concat(p, " "), T.Hacker)
+        end
+        env.warn = function(...) coPrint("WARN: " .. table.concat({...}, " "), T.Alerta) end
+        local fn = loadstring(codigo)
+        if fn then
+            setfenv(fn, env)
+            local r = fn()
+            if r ~= nil then coPrint("<- " .. tostring(r), T.Texto) end
+        else coPrint("loadstring falhou", T.Erro) end
+    end)
+    if not ok then coPrint("ERRO: " .. tostring(err), T.Erro) end
+end
+
+entrada.FocusLost:Connect(function(enter)
+    if enter and entrada.Text ~= "" then
+        executa(entrada.Text)
+        entrada.Text = ""
+    end
+end)
+
+botao(co, "▸ Dump propriedades", function()
+    if not State.alvo then coPrint("sem alvo", T.Erro); return end
+    coPrint("--- " .. State.alvo.ClassName .. " :: " .. State.alvo.Name .. " ---", T.Alerta)
+    for k, v in pairs(State.alvo) do
+        if type(k) == "string" and type(v) ~= "function" and type(v) ~= "userdata" then
+            coPrint("  " .. k .. " = " .. tostring(v), T.Texto)
+        end
+    end
+end, T.Hacker).LayoutOrder = 3
+
+botao(co, "▸ Listar filhos", function()
+    if not State.alvo then coPrint("sem alvo", T.Erro); return end
+    for _, c in ipairs(State.alvo:GetChildren()) do
+        coPrint("[" .. c.ClassName .. "] " .. c.Name, T.Texto)
+    end
+end, T.Hacker).LayoutOrder = 4
+
+botao(co, "▸ Copiar path", function()
+    if not State.alvo then coPrint("sem alvo", T.Erro); return end
+    local path = State.alvo:GetFullName()
+    if setclipboard then
+        pcall(function() setclipboard(path) end)
+        coPrint("[CLIP] " .. path, T.Hacker)
+    else coPrint("[SEM CLIPBOARD] " .. path, T.Alerta) end
+end, T.Hacker).LayoutOrder = 5
+
+botao(co, "▸ Limpar console", function()
+    for _, v in ipairs(coScroll:GetChildren()) do
+        if v:IsA("TextLabel") then v:Destroy() end
+    end
+    coOrdem = 0
+end, T.Erro).LayoutOrder = 6
+
+-- ============================================================
+-- ABA: INJETOR
+-- ============================================================
+local inj = conteudos["INJETOR"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, inj)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, inj)
+
+local injScroll = terminal(inj, 560)
+injScroll.LayoutOrder = 1
+
+local injOrdem = 0
+local function injPrint(txt, cor)
+    injOrdem += 1
+    escreve(injScroll, txt, cor or T.Hacker, injOrdem)
+    pcall(function() injScroll.CanvasPosition = Vector2.new(0, injScroll.AbsoluteCanvasSize.Y) end)
+end
+
+local function injetar(escopo, label)
+    injPrint(">>> INJETANDO EM " .. label .. " <<<", T.Alerta)
+    local conns = {}
+    local function watch(obj)
+        local c1 = obj.ChildAdded:Connect(function(ch)
+            injPrint("  [+] " .. obj.Name .. "/" .. ch.Name, T.Hacker)
+        end)
+        local c2 = obj.ChildRemoved:Connect(function(ch)
+            injPrint("  [-] " .. obj.Name .. "/" .. ch.Name, T.Erro)
+        end)
+        local c3 = obj.Changed:Connect(function(prop)
+            if prop == "Position" or prop == "CFrame" or prop == "Orientation" then return end
+            local ok, v = pcall(function() return obj[prop] end)
+            injPrint("  [~] " .. obj.Name .. "." .. prop .. " = " .. tostring(ok and v or "?"), T.Texto)
+        end)
+        conns[#conns+1] = c1; conns[#conns+1] = c2; conns[#conns+1] = c3
+    end
+    watch(escopo)
+    for _, d in ipairs(escopo:GetDescendants()) do watch(d) end
+    State.hooks[#State.hooks+1] = {nome = label, conns = conns}
+    injPrint(">>> ATIVO: " .. label .. " (" .. #conns .. " hooks) <<<", T.Alerta)
+end
+
+botao(inj, "▸ Injetar em WORKSPACE", function() injetar(workspace, "Workspace") end, T.Hacker).LayoutOrder = 2
+botao(inj, "▸ Injetar em REPLICATED", function() injetar(Replicated, "Replicated") end, T.Hacker).LayoutOrder = 3
+botao(inj, "▸ Injetar em CHARACTER", function()
+    if LocalPlayer.Character then injetar(LocalPlayer.Character, "Character")
+    else injPrint("sem character", T.Erro) end
+end, T.Hacker).LayoutOrder = 4
+botao(inj, "▸ Injetar no ALVO", function()
+    if State.alvo then injetar(State.alvo, State.alvo.Name)
+    else injPrint("sem alvo", T.Erro) end
+end, T.Alerta).LayoutOrder = 5
+
+botao(inj, "▸ HOOK __namecall GLOBAL", function()
+    injPrint(">>> Hookando __namecall... <<<", T.Alerta)
+    local ok, err = pcall(function()
+        local mt = getrawmetatable and getrawmetatable(game)
+        if not mt then error("sem getrawmetatable") end
+        local oldNC = mt.__namecall
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            local metodo = getnamecallmethod()
+            if metodo == "FireServer" or metodo == "InvokeServer" then
+                injPrint("  [OUT] " .. tostring(self) .. ":" .. metodo, T.Hacker)
+            end
+            return oldNC(self, ...)
+        end)
+        setreadonly(mt, true)
+        injPrint(">>> HOOK ATIVO <<<", T.Hacker)
+    end)
+    if not ok then injPrint("ERRO: " .. tostring(err), T.Erro) end
+end, T.Alerta).LayoutOrder = 6
+
+botao(inj, "▸ MATAR todos os hooks", function()
+    for _, h in ipairs(State.hooks) do
+        for _, c in ipairs(h.conns) do pcall(function() c:Disconnect() end) end
+    end
+    State.hooks = {}
+    injPrint(">>> HOOKS DESTRUÍDOS <<<", T.Erro)
+end, T.Erro).LayoutOrder = 7
+
+-- ============================================================
+-- ABA: REMOTES
+-- ============================================================
+local rm = conteudos["REMOTES"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, rm)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, rm)
+
+local remScroll = terminal(rm, 560)
+remScroll.LayoutOrder = 1
+
+local remOrdem = 0
+local function remClear()
+    for _, v in ipairs(remScroll:GetChildren()) do
+        if v:IsA("TextButton") then v:Destroy() end
+    end
+    remOrdem = 0
+end
+
+botao(rm, "▸ Escanear TODOS os remotes", function()
+    remClear()
+    local n = 0
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
+        or obj:IsA("UnreliableRemoteEvent") then
+            n += 1
+            remOrdem += 1
+            local b = novo("TextButton", {
+                Size = UDim2.new(1, -4, 0, 24), BackgroundColor3 = T.Painel2,
+                Text = "", BorderSizePixel = 0, ZIndex = 7, LayoutOrder = remOrdem,
+            }, remScroll)
+            corner(b, 4)
+            novo("TextLabel", {
+                Size = UDim2.new(0, 80, 1, 0), Position = UDim2.new(0, 8, 0, 0),
+                BackgroundTransparency = 1, Text = obj.ClassName:gsub("Remote", ""),
+                TextColor3 = T.Hacker, TextSize = 10, Font = Enum.Font.Code,
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
+            }, b)
+            novo("TextLabel", {
+                Size = UDim2.new(1, -90, 1, 0), Position = UDim2.new(0, 90, 0, 0),
+                BackgroundTransparency = 1, Text = obj:GetFullName(),
+                TextColor3 = T.Texto, TextSize = 10, Font = Enum.Font.Code,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                ZIndex = 8,
+            }, b)
+            b.MouseButton1Click:Connect(function()
+                State.alvo = obj
+                if _G.ODD_RefreshEditor then _G.ODD_RefreshEditor() end
+                mostrarAba("CONSOLE")
+                entrada.Text = 'OBJ:FireServer()'
+                logAdd("[SEL] " .. obj:GetFullName(), "info")
+            end)
+        end
+    end
+    logAdd("[REMOTES] " .. n .. " encontrados", "alerta")
+end, T.Hacker).LayoutOrder = 2
+
+botao(rm, "▸ FIRAR alvo", function()
+    local a = State.alvo
+    if not a then logAdd("sem alvo", "erro"); return end
+    if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
+        pcall(function() a:FireServer() end)
+        logAdd("[FIRE] " .. a:GetFullName(), "info")
+    elseif a:IsA("RemoteFunction") then
+        local ok, r = pcall(function() return a:InvokeServer() end)
+        logAdd("[INVOKE] " .. tostring(ok and r or "erro"), "info")
+    end
+end, T.Alerta).LayoutOrder = 3
+
+botao(rm, "▸ OBSERVAR alvo", function()
+    local a = State.alvo
+    if not a then logAdd("sem alvo", "erro"); return end
+    if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
+        a.OnClientEvent:Connect(function(...)
+            local args = {}
+            for i = 1, select("#", ...) do args[i] = tostring(select(i, ...)) end
+            logAdd("[RECV] " .. a.Name .. "(" .. table.concat(args, ", ") .. ")", "alerta")
+        end)
+    end
+end, T.Alerta).LayoutOrder = 4
+
+-- ============================================================
+-- ABA: BYPASS
+-- ============================================================
+local bp = conteudos["BYPASS"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, bp)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, bp)
+
 novo("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1,
-    Text = "> Sistema inicializado", TextColor3 = Tema.Acerto,
-    TextSize = 12, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1,
-}, conteudos["Principal"])
-novoBotao(conteudos["Principal"], "[ Destruir UI ]", function() gui:Destroy() end).LayoutOrder = 2
+    Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1,
+    Text = "> Módulo anti-detecção client-side.\n> Não garante bypass de anticheat server-side (Byfron).",
+    TextColor3 = T.Alerta, TextSize = 11, Font = Enum.Font.Code,
+    TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1, TextWrapped = true,
+}, bp)
 
-lista("Visual", 6)
-novoToggle(conteudos["Visual"], "ESP Ativado", false, function(v) Cfg.ESP = v end).LayoutOrder = 1
-novoToggle(conteudos["Visual"], "Ignorar Time", true, function(v) Cfg.ESPTeam = v end).LayoutOrder = 2
-novoToggle(conteudos["Visual"], "Caixa", true, function(v) Cfg.ESPBox = v end).LayoutOrder = 3
-novoToggle(conteudos["Visual"], "Nome", true, function(v) Cfg.ESPName = v end).LayoutOrder = 4
-novoToggle(conteudos["Visual"], "Distância", true, function(v) Cfg.ESPDist = v end).LayoutOrder = 5
-novoToggle(conteudos["Visual"], "Barra de Vida", true, function(v) Cfg.ESPHealth = v end).LayoutOrder = 6
+local bpScroll = terminal(bp, 500)
+bpScroll.LayoutOrder = 2
 
-lista("Combate", 6)
-novoToggle(conteudos["Combate"], "Aimbot", false, function(v) Cfg.Aimbot = v end).LayoutOrder = 1
-novoToggle(conteudos["Combate"], "Checar Parede", false, function(v) Cfg.AimbotWall = v end).LayoutOrder = 2
-novoSlider(conteudos["Combate"], "FOV", 50, 800, 250, function(v) Cfg.AimbotFOV = v end).LayoutOrder = 3
-novoSlider(conteudos["Combate"], "Suavidade %", 5, 100, 35, function(v) Cfg.AimbotSmooth = v / 100 end).LayoutOrder = 4
+local bpOrdem = 0
+local function bpPrint(txt, cor)
+    bpOrdem += 1
+    escreve(bpScroll, txt, cor or T.Hacker, bpOrdem)
+    pcall(function() bpScroll.CanvasPosition = Vector2.new(0, bpScroll.AbsoluteCanvasSize.Y) end)
+end
 
-lista("Movimento", 6)
-novoToggle(conteudos["Movimento"], "Speed", false, function(v) Cfg.SpeedOn = v end).LayoutOrder = 1
-novoSlider(conteudos["Movimento"], "Velocidade", 16, 300, 60, function(v) Cfg.SpeedVal = v end).LayoutOrder = 2
-novoToggle(conteudos["Movimento"], "Jump Boost", false, function(v) Cfg.JumpOn = v end).LayoutOrder = 3
-novoSlider(conteudos["Movimento"], "Força Pulo", 50, 500, 100, function(v) Cfg.JumpVal = v end).LayoutOrder = 4
-novoToggle(conteudos["Movimento"], "Fly", false, function(v)
-    Cfg.Fly = v
+local function bypassAtivar()
+    State.bypassOn = true
+    bpPrint(">>> ATIVANDO CAMADAS <<<", T.Alerta)
+
+    pcall(function()
+        if hookfunction and getrawmetatable then
+            local gm = getrawmetatable(game)
+            local oldIdx = gm.__index
+            setreadonly(gm, false)
+            gm.__index = newcclosure(function(t, k)
+                return oldIdx(t, k)
+            end)
+            setreadonly(gm, true)
+            bpPrint("[OK] metatable blindada", T.Hacker)
+        else bpPrint("[SKIP] hookfunction indisponível", T.Dim) end
+    end)
+
+    pcall(function()
+        if not getrawmetatable then error("sem mt") end
+        local mt = getrawmetatable(game)
+        local oldNC = mt.__namecall
+        if not oldNC then return end
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            local metodo = getnamecallmethod()
+            if metodo == "Kick" or metodo == "GetPropertyChangedSignal" then
+                local sender = tostring(self)
+                if sender:find("AntiCheat") or sender:find("Byfron") then
+                    bpPrint("[BLOCK] " .. sender .. ":" .. metodo, T.Perigo)
+                    return
+                end
+            end
+            return oldNC(self, ...)
+        end)
+        setreadonly(mt, true)
+        bpPrint("[OK] namecall filtrado", T.Hacker)
+    end)
+
+    pcall(function()
+        if setthreadidentity then
+            setthreadidentity(8)
+            bpPrint("[OK] thread identity = 8", T.Hacker)
+        else bpPrint("[SKIP] setthreadidentity indisponível", T.Dim) end
+    end)
+
+    pcall(function()
+        local fns = {"getidentity","getthreadidentity","checkcaller","islclosure"}
+        for _, f in ipairs(fns) do
+            if _G[f] then
+                local orig = _G[f]
+                _G[f] = function(...)
+                    if f == "checkcaller" or f == "islclosure" then return true end
+                    if f == "getidentity" or f == "getthreadidentity" then return 8 end
+                    return orig(...)
+                end
+            end
+        end
+        bpPrint("[OK] funções falsificadas", T.Hacker)
+    end)
+
+    bpPrint(">>> BYPASS ATIVO <<<", T.Alerta)
+    statusHdr.Text = "● BYPASS"
+    statusHdr.TextColor3 = T.Alerta
+end
+
+local function bypassDesativar()
+    State.bypassOn = false
+    bpPrint(">>> BYPASS DESATIVADO <<<", T.Erro)
+    statusHdr.Text = "● ONLINE"
+    statusHdr.TextColor3 = T.Hacker
+end
+
+botao(bp, "▸ ATIVAR bypass", bypassAtivar, T.Perigo).LayoutOrder = 3
+botao(bp, "▸ DESATIVAR bypass", bypassDesativar, T.Erro).LayoutOrder = 4
+
+botao(bp, "▸ Testar detecção atual", function()
+    bpPrint("--- TESTE ---", T.Alerta)
+    bpPrint("checkcaller: " .. tostring(checkcaller and checkcaller() or "N/A"), T.Hacker)
+    bpPrint("getidentity: " .. tostring(getidentity and getidentity() or "N/A"), T.Hacker)
+    bpPrint("getthreadidentity: " .. tostring(getthreadidentity and getthreadidentity() or "N/A"), T.Hacker)
+    bpPrint("executor: " .. tostring(identifyexecutor and identifyexecutor() or "desconhecido"), T.Hacker)
+end, T.Alerta).LayoutOrder = 5
+
+botao(bp, "▸ Anti-kick local", function()
+    bpPrint(">>> Hookando Kick local... <<<", T.Alerta)
+    pcall(function()
+        LocalPlayer.ClearAllChildren = function() end
+        LocalPlayer.Kick = function() end
+        bpPrint("[OK] Kick bloqueado", T.Hacker)
+    end)
+end, T.Perigo).LayoutOrder = 6
+
+-- ============================================================
+-- ABA: DUMP
+-- ============================================================
+local dp = conteudos["DUMP"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, dp)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, dp)
+
+local dpScroll = terminal(dp, 560)
+dpScroll.LayoutOrder = 1
+
+local dpOrdem = 0
+local function dpPrint(txt, cor)
+    dpOrdem += 1
+    escreve(dpScroll, txt, cor or T.Hacker, dpOrdem)
+    pcall(function() dpScroll.CanvasPosition = Vector2.new(0, dpScroll.AbsoluteCanvasSize.Y) end)
+end
+
+local function serializa(obj, prof, maxD)
+    prof = prof or 0
+    maxD = maxD or 4
+    if prof > maxD then return {class = obj.ClassName, name = obj.Name} end
+    local d = {class = obj.ClassName, name = obj.Name, path = obj:GetFullName()}
+    local filhos = {}
+    for _, c in ipairs(obj:GetChildren()) do
+        filhos[#filhos+1] = serializa(c, prof + 1, maxD)
+    end
+    if #filhos > 0 then d.children = filhos end
+    return d
+end
+
+botao(dp, "▸ Dump WORKSPACE → arquivo", function()
+    local ok, err = pcall(function()
+        dpPrint(">>> Gerando JSON... <<<", T.Alerta)
+        local dados = serializa(workspace, 0, 4)
+        local json = HttpService:JSONEncode(dados)
+        if writefile then
+            writefile("odd_workspace_dump.json", json)
+            dpPrint("[OK] salvo (" .. #json .. " bytes)", T.Hacker)
+        else dpPrint("[SEM writefile] " .. #json .. " bytes", T.Alerta) end
+    end)
+    if not ok then dpPrint("[ERRO] " .. tostring(err), T.Erro) end
+end, T.Hacker).LayoutOrder = 2
+
+botao(dp, "▸ Dump REPLICATED → arquivo", function()
+    local ok, err = pcall(function()
+        local dados = serializa(Replicated, 0, 5)
+        local json = HttpService:JSONEncode(dados)
+        if writefile then
+            writefile("odd_replicated_dump.json", json)
+            dpPrint("[OK] salvo (" .. #json .. " bytes)", T.Hacker)
+        else dpPrint("[SEM writefile] " .. #json .. " bytes", T.Alerta) end
+    end)
+    if not ok then dpPrint("[ERRO] " .. tostring(err), T.Erro) end
+end, T.Hacker).LayoutOrder = 3
+
+botao(dp, "▸ Buscar STRING no jogo", function()
+    if not State.alvo then dpPrint("alvo necessário", T.Erro); return end
+    local termo = State.alvo.Name
+    dpPrint(">>> Buscando: '" .. termo .. "' <<<", T.Alerta)
+    local n = 0
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj.Name:find(termo, 1, true) then
+            n += 1
+            if n <= 100 then dpPrint("  " .. obj.ClassName .. " :: " .. obj:GetFullName(), T.Texto) end
+        end
+    end
+    dpPrint(">>> " .. n .. " resultados <<<", T.Alerta)
+end, T.Alerta).LayoutOrder = 4
+
+botao(dp, "▸ Dump scripts (Source)", function()
+    dpPrint(">>> Escaneando scripts... <<<", T.Alerta)
+    local n = 0
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("LuaSourceContainer") then
+            local ok, src = pcall(function() return obj.Source end)
+            if ok and src and #src > 0 then
+                n += 1
+                dpPrint("[" .. #src .. "b] " .. obj:GetFullName(), T.Hacker)
+                if n >= 50 then dpPrint("(limitado a 50)", T.Dim); break end
+            end
+        end
+    end
+    dpPrint(">>> Total: " .. n .. " <<<", T.Alerta)
+end, T.Hacker).LayoutOrder = 5
+
+botao(dp, "▸ Listar executores disponíveis", function()
+    dpPrint("--- AMBIENTE ---", T.Alerta)
+    dpPrint("identifyexecutor: " .. tostring(identifyexecutor and identifyexecutor() or "N/A"), T.Hacker)
+    dpPrint("gethui: " .. tostring(gethui ~= nil), T.Hacker)
+    dpPrint("getrawmetatable: " .. tostring(getrawmetatable ~= nil), T.Hacker)
+    dpPrint("hookfunction: " .. tostring(hookfunction ~= nil), T.Hacker)
+    dpPrint("writefile: " .. tostring(writefile ~= nil), T.Hacker)
+    dpPrint("setclipboard: " .. tostring(setclipboard ~= nil), T.Hacker)
+    dpPrint("Drawing: " .. tostring(Drawing ~= nil), T.Hacker)
+end, T.Hacker).LayoutOrder = 6
+
+-- ============================================================
+-- ABA: TELEPORT
+-- ============================================================
+local tp = conteudos["TELEPORT"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, tp)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, tp)
+
+local tpScroll = terminal(tp, 440)
+tpScroll.LayoutOrder = 1
+
+local tpOrdem = 0
+local function tpPrint(txt, cor)
+    tpOrdem += 1
+    escreve(tpScroll, txt, cor or T.Hacker, tpOrdem)
+    pcall(function() tpScroll.CanvasPosition = Vector2.new(0, tpScroll.AbsoluteCanvasSize.Y) end)
+end
+
+local function teleportar(cframe, label)
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then error("sem HRP") end
+        hrp.CFrame = cframe
+        tpPrint("[TP] " .. (label or "destino"), T.Hacker)
+    end)
+    if not ok then tpPrint("[ERRO] " .. tostring(err), T.Erro) end
+end
+
+local function teleportarSuave(cframe, label)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    if v then
-        local bv = Instance.new("BodyVelocity", hrp); bv.Name = "ODD_FlyBV"; bv.MaxForce = Vector3.new(1e5,1e5,1e5); bv.Velocity = Vector3.zero
-        local bg = Instance.new("BodyGyro", hrp); bg.Name = "ODD_FlyBG"; bg.MaxTorque = Vector3.new(1e5,1e5,1e5); bg.P = 3000
-    else
-        local bv = hrp:FindFirstChild("ODD_FlyBV"); if bv then bv:Destroy() end
-        local bg = hrp:FindFirstChild("ODD_FlyBG"); if bg then bg:Destroy() end
-    end
-end).LayoutOrder = 5
-novoSlider(conteudos["Movimento"], "Vel. Fly", 20, 400, 60, function(v) Cfg.FlySpeed = v end).LayoutOrder = 6
+    if not hrp then tpPrint("[ERRO] sem HRP", T.Erro); return end
+    local startCF = hrp.CFrame
+    local conn, t = nil, 0
+    conn = RunService.Heartbeat:Connect(function(dt)
+        t += dt * 2
+        if t >= 1 then t = 1; conn:Disconnect() end
+        pcall(function() hrp.CFrame = startCF:Lerp(cframe, t) end)
+    end)
+    tpPrint("[TP-SUAVE] " .. (label or "destino"), T.Hacker)
+end
 
-lista("Diversos", 6)
-novoToggle(conteudos["Diversos"], "Anti-AFK", true, function(v) Cfg.AntiAFK = v end).LayoutOrder = 1
-novoToggle(conteudos["Diversos"], "Anti-Void", true, function(v) Cfg.AntiVoid = v end).LayoutOrder = 2
+_G.ODD_Teleportar = teleportar
+
+botao(tp, "▸ TP para ALVO", function()
+    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
+    pcall(function()
+        local pos = State.alvo.Position or (State.alvo.CFrame and State.alvo.CFrame.Position)
+        if not pos then error("alvo sem Position") end
+        teleportar(CFrame.new(pos + Vector3.new(0, 4, 0)), State.alvo.Name)
+    end)
+end, T.Alerta).LayoutOrder = 2
+
+botao(tp, "▸ TP SUAVE para ALVO", function()
+    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
+    pcall(function()
+        local pos = State.alvo.Position or (State.alvo.CFrame and State.alvo.CFrame.Position)
+        if not pos then error("alvo sem Position") end
+        teleportarSuave(CFrame.new(pos + Vector3.new(0, 4, 0)), State.alvo.Name)
+    end)
+end, T.Alerta).LayoutOrder = 3
+
+botao(tp, "▸ TP para CHÃO (0,10,0)", function()
+    teleportar(CFrame.new(0, 10, 0), "origem")
+end, T.Hacker).LayoutOrder = 4
+
+botao(tp, "▸ Salvar posição atual", function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then tpPrint("sem HRP", T.Erro); return end
+    _G.ODD_SavedPos = hrp.CFrame
+    tpPrint("[SAVE] posição salva", T.Hacker)
+end, T.Hacker).LayoutOrder = 5
+
+botao(tp, "▸ Voltar para posição salva", function()
+    if not _G.ODD_SavedPos then tpPrint("nada salvo", T.Erro); return end
+    teleportar(_G.ODD_SavedPos, "salva")
+end, T.Hacker).LayoutOrder = 6
+
+botao(tp, "▸ TP para próximo jogador", function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                teleportar(hrp.CFrame * CFrame.new(0, 4, -3), plr.Name)
+                return
+            end
+        end
+    end
+    tpPrint("[ERRO] nenhum jogador disponível", T.Erro)
+end, T.Hacker).LayoutOrder = 7
+
+botao(tp, "▸ DUPLICAR alvo → Backpack", function()
+    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
+    local ok, err = pcall(function()
+        if not State.alvo:IsA("Tool") then error("alvo não é Tool") end
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        if not bp then error("sem Backpack") end
+        local clone = State.alvo:Clone()
+        clone.Parent = bp
+        tpPrint("[DUP] " .. clone.Name .. " → Backpack", T.Hacker)
+    end)
+    if not ok then tpPrint("[ERRO] " .. tostring(err), T.Erro) end
+end, T.Alerta).LayoutOrder = 8
+
+botao(tp, "▸ DUPLICAR alvo → Character", function()
+    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        if not char then error("sem character") end
+        local clone = State.alvo:Clone()
+        clone.Parent = char
+        if clone:IsA("BasePart") then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then clone.CFrame = hrp.CFrame * CFrame.new(0, 3, 0) end
+        end
+        tpPrint("[DUP] " .. clone.Name .. " → Character", T.Hacker)
+    end)
+    if not ok then tpPrint("[ERRO] " .. tostring(err), T.Erro) end
+end, T.Alerta).LayoutOrder = 9
+
+-- ============================================================
+-- ABA: MONITOR
+-- ============================================================
+local mn = conteudos["MONITOR"]
+novo("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, mn)
+novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, mn)
+
+local monScroll = terminal(mn, 400)
+monScroll.LayoutOrder = 1
+
+local monOrdem = 0
+local function monPrint(txt, cor)
+    monOrdem += 1
+    escreve(monScroll, txt, cor or T.Hacker, monOrdem)
+    pcall(function() monScroll.CanvasPosition = Vector2.new(0, monScroll.AbsoluteCanvasSize.Y) end)
+end
+
+local Monitor = {
+    ativo        = false,
+    conn         = nil,
+    ultimo       = {},
+    gatilhoProp  = "Transparency",
+    gatilhoValor = "0",
+    autoTP       = false,
+    autoExec     = "",
+}
+
+local function monitorLoop()
+    if not Monitor.ativo then return end
+    if not State.alvo then return end
+    local a = State.alvo
+    local ok, valor = pcall(function() return a[Monitor.gatilhoProp] end)
+    if not ok then return end
+    if Monitor.ultimo[a] ~= valor then
+        Monitor.ultimo[a] = valor
+        monPrint("[MUDOU] " .. a.Name .. "." .. Monitor.gatilhoProp .. " = " .. tostring(valor), T.Texto)
+        if tostring(valor) == tostring(Monitor.gatilhoValor) then
+            monPrint(">>> GATILHO DISPARADO <<<", T.Alerta)
+            if Monitor.autoTP and _G.ODD_Teleportar then
+                local pos = a.Position or (a.CFrame and a.CFrame.Position)
+                if pos then _G.ODD_Teleportar(CFrame.new(pos + Vector3.new(0, 4, 0)), a.Name) end
+            end
+            if Monitor.autoExec ~= "" then
+                pcall(function()
+                    local env = setmetatable({OBJ = a}, {__index = getfenv()})
+                    local fn = loadstring(Monitor.autoExec)
+                    if fn then setfenv(fn, env); fn() end
+                end)
+            end
+        end
+    end
+end
+
+botao(mn, "▸ INICIAR monitor do ALVO", function()
+    if not State.alvo then monPrint("sem alvo", T.Erro); return end
+    if Monitor.ativo then monPrint("[AVISO] já ativo", T.Alerta); return end
+    Monitor.ativo = true
+    Monitor.ultimo = {}
+    Monitor.conn = RunService.Heartbeat:Connect(monitorLoop)
+    monPrint(">>> MONITOR ATIVO <<<", T.Alerta)
+    monPrint("alvo: " .. State.alvo:GetFullName(), T.Hacker)
+    monPrint("prop: " .. Monitor.gatilhoProp, T.Hacker)
+    monPrint("gatilho: " .. tostring(Monitor.gatilhoValor), T.Hacker)
+end, T.Hacker).LayoutOrder = 2
+
+botao(mn, "▸ PARAR monitor", function()
+    Monitor.ativo = false
+    if Monitor.conn then Monitor.conn:Disconnect(); Monitor.conn = nil end
+    monPrint(">>> MONITOR PARADO <<<", T.Erro)
+end, T.Erro).LayoutOrder = 3
+
+local propInput = novo("TextBox", {
+    Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = T.Painel,
+    Text = "Transparency", PlaceholderText = "propriedade (ex: Transparency)",
+    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim, TextSize = 11,
+    Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+    LayoutOrder = 4,
+}, mn)
+corner(propInput, 4); stroke(propInput, T.BordaDim, 1)
+novo("UIPadding", {PaddingLeft = UDim.new(0, 8)}, propInput)
+propInput.FocusLost:Connect(function()
+    Monitor.gatilhoProp = propInput.Text
+    monPrint("[CONFIG] prop = " .. propInput.Text, T.Hacker)
+end)
+
+local valInput = novo("TextBox", {
+    Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = T.Painel,
+    Text = "0", PlaceholderText = "valor que dispara (ex: 0)",
+    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim, TextSize = 11,
+    Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+    LayoutOrder = 5,
+}, mn)
+corner(valInput, 4); stroke(valInput, T.BordaDim, 1)
+novo("UIPadding", {PaddingLeft = UDim.new(0, 8)}, valInput)
+valInput.FocusLost:Connect(function()
+    Monitor.gatilhoValor = valInput.Text
+    monPrint("[CONFIG] gatilho = " .. valInput.Text, T.Hacker)
+end)
+
+local execInput = novo("TextBox", {
+    Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = T.Painel,
+    Text = "", PlaceholderText = "código auto-exec (opcional)",
+    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim, TextSize = 11,
+    Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
+    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+    LayoutOrder = 6,
+}, mn)
+corner(execInput, 4); stroke(execInput, T.BordaDim, 1)
+novo("UIPadding", {PaddingLeft = UDim.new(0, 8)}, execInput)
+execInput.FocusLost:Connect(function()
+    Monitor.autoExec = execInput.Text
+    monPrint("[CONFIG] auto-exec setado", T.Hacker)
+end)
+
+botao(mn, "▸ Alternar AUTO-TP", function()
+    Monitor.autoTP = not Monitor.autoTP
+    monPrint("[CONFIG] auto-TP = " .. tostring(Monitor.autoTP), T.Hacker)
+end, T.Hacker).LayoutOrder = 7
+
+botao(mn, "▸ MONITORAR jogo inteiro (ChildAdded)", function()
+    monPrint(">>> Monitorando TODO o jogo <<<", T.Alerta)
+    local c = workspace.DescendantAdded:Connect(function(obj)
+        monPrint("[+] " .. obj.ClassName .. " :: " .. obj.Name, T.Hacker)
+    end)
+    State.hooks[#State.hooks+1] = {nome = "DescendantAdded", conns = {c}}
+    monPrint("[OK] hook instalado", T.Hacker)
+end, T.Alerta).LayoutOrder = 8
 
 -- ============================================================
 -- ABRIR / FECHAR
 -- ============================================================
 btnAbrir.MouseButton1Click:Connect(function()
-    painel.Visible = true; btnAbrir.Visible = false; mostrarAba("Principal")
+    painel.Visible = true
+    btnAbrir.Visible = false
+    mostrarAba("SCANNER")
 end)
 btnFechar.MouseButton1Click:Connect(function()
-    painel.Visible = false; btnAbrir.Visible = true
+    painel.Visible = false
+    btnAbrir.Visible = true
 end)
 
-mostrarAba("Principal")
+mostrarAba("SCANNER")
 
--- ============================================================
--- ESP (Drawing opcional)
--- ============================================================
-local temDrawing = pcall(function() local d = Drawing.new("Square"); d:Remove() end)
-local desenhos = {}
-
-if temDrawing then
-    local function limpar(plr)
-        local d = desenhos[plr]; if not d then return end
-        for _, v in pairs(d) do v:Remove() end
-        desenhos[plr] = nil
-    end
-
-    RunService.RenderStepped:Connect(function()
-        if not Cfg.ESP then
-            for plr in pairs(desenhos) do limpar(plr) end
-            return
-        end
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr == LocalPlayer then continue end
-            local char = plr.Character
-            local head = char and char:FindFirstChild("Head")
-            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            if not (head and hrp and hum and hum.Health > 0) then limpar(plr); continue end
-            if Cfg.ESPTeam and plr.Team == LocalPlayer.Team then limpar(plr); continue end
-
-            local d = desenhos[plr]
-            if not d then
-                d = {
-                    box  = Drawing.new("Square"),
-                    nome = Drawing.new("Text"),
-                    dist = Drawing.new("Text"),
-                    hp   = Drawing.new("Square"),
-                }
-                desenhos[plr] = d
-            end
-
-            local hp, on = Camera:WorldToViewportPoint(head.Position)
-            local rp = Camera:WorldToViewportPoint(hrp.Position)
-            if not on then for _, v in pairs(d) do v.Visible = false end; continue end
-
-            local h = math.abs(rp.Y - hp.Y) * 1.8
-            local w = h * 0.55
-
-            if Cfg.ESPBox then
-                d.box.Visible = true; d.box.Size = Vector2.new(w, h)
-                d.box.Position = Vector2.new(hp.X - w/2, hp.Y - h/2)
-                d.box.Color = Tema.Borda; d.box.Thickness = 1
-            else d.box.Visible = false end
-
-            if Cfg.ESPName then
-                d.nome.Visible = true; d.nome.Text = plr.Name; d.nome.Size = 14
-                d.nome.Center = true; d.nome.Outline = true; d.nome.Color = Tema.Borda
-                d.nome.Position = Vector2.new(hp.X, hp.Y - h/2 - 16)
-            else d.nome.Visible = false end
-
-            if Cfg.ESPDist then
-                d.dist.Visible = true
-                d.dist.Text = math.floor((hrp.Position - Camera.CFrame.Position).Magnitude) .. "m"
-                d.dist.Size = 12; d.dist.Center = true; d.dist.Outline = true
-                d.dist.Color = Color3.new(1,1,1)
-                d.dist.Position = Vector2.new(hp.X, hp.Y + h/2 + 2)
-            else d.dist.Visible = false end
-
-            if Cfg.ESPHealth then
-                local pct = hum.Health / hum.MaxHealth
-                d.hp.Visible = true; d.hp.Size = Vector2.new(3, h * pct)
-                d.hp.Position = Vector2.new(hp.X - w/2 - 6, hp.Y - h/2 + (h - h*pct))
-                d.hp.Color = Color3.fromRGB(255*(1-pct), 255*pct, 0); d.hp.Filled = true
-            else d.hp.Visible = false end
-        end
-    end)
-end
-
--- ============================================================
--- AIMBOT (mobile: travamento automático)
--- ============================================================
-RunService.RenderStepped:Connect(function()
-    if not Cfg.Aimbot then return end
-    local centro = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    local alvo, menorD = nil, Cfg.AimbotFOV
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then
-            local char = plr.Character
-            local part = char and (char:FindFirstChild(Cfg.AimbotPart) or char:FindFirstChild("Head"))
-            if part then
-                if Cfg.AimbotWall then
-                    local params = RaycastParams.new()
-                    params.FilterType = Enum.RaycastFilterType.Exclude
-                    params.FilterDescendantsInstances = {LocalPlayer.Character, part.Parent}
-                    local hit = workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
-                    if hit then continue end
-                end
-                local sp, on = Camera:WorldToViewportPoint(part.Position)
-                if on then
-                    local d = (Vector2.new(sp.X, sp.Y) - centro).Magnitude
-                    if d < menorD then alvo, menorD = part, d end
-                end
-            end
-        end
-    end
-    if alvo then
-        Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, alvo.Position), Cfg.AimbotSmooth)
-    end
-end)
-
--- ============================================================
--- SPEED / JUMP / FLY
--- ============================================================
-RunService.Heartbeat:Connect(function()
-    local char = LocalPlayer.Character
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if hum then
-        hum.WalkSpeed = Cfg.SpeedOn and Cfg.SpeedVal or 16
-        hum.JumpPower = Cfg.JumpOn and Cfg.JumpVal or 50
-    end
-    if Cfg.Fly and hrp then
-        local bv = hrp:FindFirstChild("ODD_FlyBV")
-        local bg = hrp:FindFirstChild("ODD_FlyBG")
-        if bv and bg then
-            local mov = Vector3.zero
-            local cam = Camera.CFrame
-            if UserInput:IsKeyDown(Enum.KeyCode.W) then mov += cam.LookVector end
-            if UserInput:IsKeyDown(Enum.KeyCode.S) then mov -= cam.LookVector end
-            if UserInput:IsKeyDown(Enum.KeyCode.A) then mov -= cam.RightVector end
-            if UserInput:IsKeyDown(Enum.KeyCode.D) then mov += cam.RightVector end
-            if UserInput:IsKeyDown(Enum.KeyCode.Space) then mov += Vector3.new(0,1,0) end
-            bv.Velocity = mov * Cfg.FlySpeed
-            bg.CFrame = cam
-        end
-    end
-end)
-
--- ============================================================
--- ANTI-AFK / ANTI-VOID
--- ============================================================
-LocalPlayer.Idled:Connect(function()
-    if not Cfg.AntiAFK then return end
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not Cfg.AntiVoid then return end
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp and hrp.Position.Y < -100 then
-        hrp.CFrame = CFrame.new(0, 50, 0)
-    end
-end)
-
-print("[OLHO DE DEUS] UI carregada com sucesso.")
+logAdd("[BOOT] Olho de Deus v5.5 OMEGA inicializado", "info")
+print("[OLHO DE DEUS v5.5] Terminal carregado.")
