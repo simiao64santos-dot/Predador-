@@ -1,0 +1,440 @@
+--[[
+    HUB PREDATOR v2.1
+    Plataforma: Roblox Mobile (Delta / Fluxus / Arceus / Hydrogen / Codex)
+    Loader: LinoriaLib (fallback Rayfield)
+    Autor: [F]sk
+]]
+
+-- ============================================================
+-- ANTI-DETECÇÃO (camada básica de ofuscação)
+-- ============================================================
+local function _s(str)
+    local out = {}
+    for i = 1, #str do
+        out[i] = string.char(string.byte(str, i) + 3)
+    end
+    return table.concat(out)
+end
+
+local RunService   = game:GetService(_s("Ruq6lfhylf")) -- RunService
+local Players      = game:GetService(_s("Sod\huv"))    -- Players
+local Workspace    = game:GetService(_s("Zrunvsd\h"))  -- Workspace
+local UIS          = game:GetService(_s("XhuvUq\uwh")) -- UserInputService
+local Lighting     = game:GetService(_s("Olj k wlqj")) -- Lighting
+local TweenService = game:GetService(_s("WzhhqVhuylfh"))
+local HttpService  = game:GetService(_s("KwwsVhuylfh"))
+local VirtualUser  = game:GetService("VirtualUser")
+local LocalPlayer  = Players.LocalPlayer
+local Camera       = Workspace.CurrentCamera
+
+-- ============================================================
+-- CONFIG
+-- ============================================================
+local Config = {
+    ESP          = false,
+    ESPTeamCheck = true,
+    ESPColor     = Color3.fromRGB(0, 255, 170),
+    ESPBox       = true,
+    ESPName      = true,
+    ESPDistance  = true,
+    ESPHealth    = true,
+    Aimbot       = false,
+    AimbotFOV    = 250,
+    AimbotPart   = "Head",
+    AimbotSmooth = 0.35,
+    AimbotWall   = false,
+    Speed        = 16,
+    SpeedOn      = false,
+    JumpPower    = 50,
+    JumpOn       = false,
+    Fly          = false,
+    FlySpeed     = 60,
+    AntiAFK      = true,
+    AntiVoid     = true,
+    ScannerOn    = false,
+    ScannerRange = 500,
+}
+
+-- ============================================================
+-- UI (Linoria / Rayfield fallback)
+-- ============================================================
+local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
+local Theme = Lib.Themes["Default"]
+
+local Window = Lib:CreateWindow({
+    Title = "PREDATOR v2.1 | MOBILE",
+    Center = true,
+    AutoShow = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2,
+})
+
+local Tabs = {
+    Main    = Window:AddTab("Principal"),
+    Visual  = Window:AddTab("Visual"),
+    Combat  = Window:AddTab("Combate"),
+    Move    = Window:AddTab("Movimento"),
+    Scanner = Window:AddTab("Scanner"),
+    Misc    = Window:AddTab("Diversos"),
+    Settings= Window:AddTab("Config"),
+}
+
+-- ============================================================
+-- GRUPO: PRINCIPAL
+-- ============================================================
+local MainGroup = Tabs.Main:AddLeftGroupbox("Status")
+local StatusLabel = MainGroup:AddLabel("Hub carregado. Aguardando.")
+MainGroup:AddButton("Recarregar Config", function()
+    StatusLabel:SetText("Config recarregado às " .. os.date("%H:%M:%S"))
+end)
+
+local function Notify(txt)
+    Lib:Notify({ Title = "Predator", Content = txt, Duration = 3 })
+end
+
+-- ============================================================
+-- SCANNER INTELIGENTE
+-- ============================================================
+local Scanner = {
+    targets = {},
+    items = {},
+    refresh = 0,
+}
+
+local function isAlive(plr)
+    local char = plr.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function scanWorkspace()
+    Scanner.targets = {}
+    Scanner.items = {}
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and isAlive(plr) then
+            local char = plr.Character
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
+                if dist <= Config.ScannerRange then
+                    table.insert(Scanner.targets, {
+                        player = plr,
+                        distance = dist,
+                        root = hrp,
+                    })
+                end
+            end
+        end
+    end
+
+    -- itens coletáveis (heurística por nome)
+    local namePatterns = {"Coin", "Gem", "Chest", "Money", "Cash", "Drop", "Loot", "Orb", "Crystal"}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            for _, pat in ipairs(namePatterns) do
+                if string.find(obj.Name, pat, 1, true) then
+                    table.insert(Scanner.items, obj)
+                    break
+                end
+            end
+        end
+    end
+
+    table.sort(Scanner.targets, function(a, b) return a.distance < b.distance end)
+    StatusLabel:SetText(string.format("Scanner: %d alvos | %d itens", #Scanner.targets, #Scanner.items))
+end
+
+-- ============================================================
+-- ESP
+-- ============================================================
+local Drawings = {}
+
+local function clearDrawing(plr)
+    local d = Drawings[plr]
+    if not d then return end
+    for _, v in pairs(d) do
+        if typeof(v) == "Instance" and v.Destroy then v:Destroy() end
+    end
+    Drawings[plr] = nil
+end
+
+local function newDraw(class, props)
+    local d = Drawing.new(class)
+    for k, v in pairs(props) do d[k] = v end
+    return d
+end
+
+local function updateESP(plr)
+    if not Config.ESP then clearDrawing(plr) return end
+    if plr == LocalPlayer then return end
+    if not isAlive(plr) then clearDrawing(plr) return end
+
+    local char = plr.Character
+    local head = char:FindFirstChild("Head")
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    if not (head and hrp and hum) then clearDrawing(plr) return end
+
+    if Config.ESPTeamCheck and plr.Team == LocalPlayer.Team then
+        clearDrawing(plr) return
+    end
+
+    local headPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+    local rootPos, _ = Camera:WorldToViewportPoint(hrp.Position)
+    if not onScreen then
+        if Drawings[plr] then
+            for _, v in pairs(Drawings[plr]) do if v.Visible ~= nil then v.Visible = false end end
+        end
+        return
+    end
+
+    local d = Drawings[plr]
+    if not d then
+        d = {
+            box    = newDraw("Square", {Thickness = 1, Color = Config.ESPColor, Filled = false}),
+            name   = newDraw("Text",   {Color = Config.ESPColor, Size = 14, Center = true}),
+            dist   = newDraw("Text",   {Color = Color3.new(1,1,1), Size = 12, Center = true}),
+            health = newDraw("Square", {Thickness = 2, Filled = true, Color = Color3.new(0,1,0)}),
+        }
+        Drawings[plr] = d
+    end
+
+    -- caixa
+    local top    = headPos
+    local bottom = rootPos
+    local height = math.abs(bottom.Y - top.Y) * 1.8
+    local width  = height * 0.6
+
+    if Config.ESPBox then
+        d.box.Visible = true
+        d.box.Size    = Vector2.new(width, height)
+        d.box.Position= Vector2.new(top.X - width/2, top.Y - height/2)
+        d.box.Color   = Config.ESPColor
+    else
+        d.box.Visible = false
+    end
+
+    if Config.ESPName then
+        d.name.Visible = true
+        d.name.Text    = plr.Name
+        d.name.Position= Vector2.new(top.X, top.Y - height/2 - 16)
+        d.name.Color   = Config.ESPColor
+    else
+        d.name.Visible = false
+    end
+
+    if Config.ESPDistance then
+        d.dist.Visible = true
+        local distance = (hrp.Position - Camera.CFrame.Position).Magnitude
+        d.dist.Text    = string.format("%d m", math.floor(distance))
+        d.dist.Position= Vector2.new(top.X, top.Y + height/2 + 2)
+    else
+        d.dist.Visible = false
+    end
+
+    if Config.ESPHealth then
+        d.health.Visible = true
+        local pct = hum.Health / hum.MaxHealth
+        d.health.Size    = Vector2.new(3, height * pct)
+        d.health.Position= Vector2.new(top.X - width/2 - 6, top.Y - height/2 + (height - height*pct))
+        d.health.Color   = Color3.fromRGB(255 * (1-pct), 255 * pct, 0)
+    else
+        d.health.Visible = false
+    end
+end
+
+-- ============================================================
+-- AIMBOT
+-- ============================================================
+local function closestTarget()
+    local best, bestDist = nil, Config.AimbotFOV
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and isAlive(plr) then
+            local char = plr.Character
+            local part = char:FindFirstChild(Config.AimbotPart) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+            if part then
+                if Config.AimbotWall then
+                    local params = RaycastParams.new()
+                    params.FilterType = Enum.RaycastFilterType.Exclude
+                    params.FilterDescendantsInstances = {LocalPlayer.Character, part.Parent}
+                    local res = Workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
+                    if res then continue end
+                end
+                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+                    local d = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                    if d < bestDist then
+                        best, bestDist = part, d
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Config.Aimbot then return end
+    if not UIS.TouchEnabled then return end  -- mobile: mira automática
+    local target = closestTarget()
+    if target then
+        Camera.CFrame = Camera.CFrame:Lerp(
+            CFrame.new(Camera.CFrame.Position, target.Position),
+            Config.AimbotSmooth
+        )
+    end
+end)
+
+-- ============================================================
+-- MOVIMENTO
+-- ============================================================
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = Config.SpeedOn and Config.Speed or 16 end
+end
+
+local function applyJump()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.JumpPower = Config.JumpOn and Config.JumpPower or 50 end
+end
+
+local flyBV, flyBG
+
+local function toggleFly(on)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if on then
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        flyBV.Velocity = Vector3.zero
+        flyBV.Parent = hrp
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        flyBG.P = 1000
+        flyBG.Parent = hrp
+    else
+        if flyBV then flyBV:Destroy() end
+        if flyBG then flyBG:Destroy() end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if not Config.Fly then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not (hrp and flyBV and flyBG) then return end
+    local move = Vector3.zero
+    local cam = Camera.CFrame
+    if UIS:IsKeyDown(Enum.KeyCode.W) then move += cam.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.S) then move -= cam.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.A) then move -= cam.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.D) then move += cam.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0,1,0) end
+    flyBV.Velocity = move * Config.FlySpeed
+    flyBG.CFrame = cam
+end)
+
+-- ============================================================
+-- ANTI-AFK / ANTI-VOID
+-- ============================================================
+LocalPlayer.Idled:Connect(function()
+    if not Config.AntiAFK then return end
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not Config.AntiVoid then return end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp.Position.Y < -100 then
+        hrp.CFrame = CFrame.new(0, 50, 0)
+    end
+end)
+
+-- ============================================================
+-- LOOP PRINCIPAL
+-- ============================================================
+RunService.RenderStepped:Connect(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        updateESP(plr)
+    end
+
+    Scanner.refresh += 1
+    if Scanner.refresh >= 60 then
+        Scanner.refresh = 0
+        if Config.ScannerOn then scanWorkspace() end
+    end
+
+    applySpeed()
+    applyJump()
+end)
+
+-- ============================================================
+-- UI CONTROLS
+-- ============================================================
+local VisualGroup = Tabs.Visual:AddLeftGroupbox("ESP")
+VisualGroup:AddToggle("ESP", {Text = "Ativar ESP", Default = false}):OnChanged(function(v)
+    Config.ESP = v
+    if not v then
+        for plr in pairs(Drawings) do clearDrawing(plr) end
+    end
+    Notify(v and "ESP ativado" or "ESP desativado")
+end)
+VisualGroup:AddToggle("ESPTeam", {Text = "Ignorar Time", Default = true}):OnChanged(function(v) Config.ESPTeamCheck = v end)
+VisualGroup:AddToggle("ESPBox",  {Text = "Caixa",     Default = true}):OnChanged(function(v) Config.ESPBox = v end)
+VisualGroup:AddToggle("ESPName", {Text = "Nome",      Default = true}):OnChanged(function(v) Config.ESPName = v end)
+VisualGroup:AddToggle("ESPDist", {Text = "Distância", Default = true}):OnChanged(function(v) Config.ESPDistance = v end)
+VisualGroup:AddToggle("ESPHP",   {Text = "Vida",      Default = true}):OnChanged(function(v) Config.ESPHealth = v end)
+
+local CombatGroup = Tabs.Combat:AddLeftGroupbox("Aimbot")
+CombatGroup:AddToggle("Aimbot", {Text = "Ativar Aimbot", Default = false}):OnChanged(function(v) Config.Aimbot = v; Notify(v and "Aimbot ON" or "Aimbot OFF") end)
+CombatGroup:AddSlider("AimbotFOV", {Text = "FOV", Min = 50, Max = 800, Default = 250, Rounding = 0}):OnChanged(function(v) Config.AimbotFOV = v end)
+CombatGroup:AddSlider("AimbotSmooth", {Text = "Suavidade", Min = 0.05, Max = 1, Default = 0.35, Rounding = 2}):OnChanged(function(v) Config.AimbotSmooth = v end)
+CombatGroup:AddToggle("AimbotWall", {Text = "Verificar Parede", Default = false}):OnChanged(function(v) Config.AimbotWall = v end)
+CombatGroup:AddDropdown("AimbotPart", {Text = "Parte do Alvo", Values = {"Head","HumanoidRootPart","UpperTorso"}, Default = "Head"}):OnChanged(function(v) Config.AimbotPart = v end)
+
+local MoveGroup = Tabs.Move:AddLeftGroupbox("Movimento")
+MoveGroup:AddToggle("SpeedOn", {Text = "Ativar Speed", Default = false}):OnChanged(function(v) Config.SpeedOn = v end)
+MoveGroup:AddSlider("Speed", {Text = "Velocidade", Min = 16, Max = 300, Default = 60, Rounding = 0}):OnChanged(function(v) Config.Speed = v end)
+MoveGroup:AddToggle("JumpOn", {Text = "Ativar Jump", Default = false}):OnChanged(function(v) Config.JumpOn = v end)
+MoveGroup:AddSlider("JumpPower", {Text = "Força do Pulo", Min = 50, Max = 500, Default = 100, Rounding = 0}):OnChanged(function(v) Config.JumpPower = v end)
+MoveGroup:AddToggle("Fly", {Text = "Ativar Fly", Default = false}):OnChanged(function(v)
+    Config.Fly = v
+    toggleFly(v)
+    Notify(v and "Fly ON" or "Fly OFF")
+end)
+MoveGroup:AddSlider("FlySpeed", {Text = "Velocidade Fly", Min = 20, Max = 400, Default = 60, Rounding = 0}):OnChanged(function(v) Config.FlySpeed = v end)
+
+local ScannerGroup = Tabs.Scanner:AddLeftGroupbox("Scanner Inteligente")
+ScannerGroup:AddToggle("ScannerOn", {Text = "Ativar Scanner", Default = false}):OnChanged(function(v)
+    Config.ScannerOn = v
+    if v then scanWorkspace() end
+end)
+ScannerGroup:AddSlider("ScannerRange", {Text = "Raio (studs)", Min = 50, Max = 5000, Default = 500, Rounding = 0}):OnChanged(function(v) Config.ScannerRange = v end)
+ScannerGroup:AddButton("Escanear Agora", function()
+    scanWorkspace()
+    Notify("Scan concluído")
+end)
+
+local MiscGroup = Tabs.Misc:AddLeftGroupbox("Diversos")
+MiscGroup:AddToggle("AntiAFK", {Text = "Anti-AFK", Default = true}):OnChanged(function(v) Config.AntiAFK = v end)
+MiscGroup:AddToggle("AntiVoid", {Text = "Anti-Void", Default = true}):OnChanged(function(v) Config.AntiVoid = v end)
+
+local SettingsGroup = Tabs.Settings:AddLeftGroupbox("Interface")
+SettingsGroup:AddDropdown("Theme", {Text = "Tema", Values = {"Default","Dark","Aqua","Amethyst"}, Default = "Default"}):OnChanged(function(v)
+    Lib:SetTheme(v)
+end)
+
+Notify("PREDATOR v2.1 carregado com sucesso.")
