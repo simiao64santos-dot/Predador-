@@ -1,129 +1,115 @@
 --[[
-    OLHO DE DEUS v3.0
+    OLHO DE DEUS v3.1
     UI standalone — zero dependência externa
-    Compatível: Delta, Fluxus, Arceus, Hydrogen, Codex, KRNL mobile
+    Parent seguro: gethui() → CoreGui → PlayerGui
+    Compatível: Delta, Fluxus, Arceus, Hydrogen, Codex (mobile)
 ]]
 
--- ============================================================
--- SERVIÇOS (strings normais — sem ofuscação quebrável)
--- ============================================================
-local Players      = game:GetService("Players")
-local RunService   = game:GetService("RunService")
-local UserInput    = game:GetService("UserInputService")
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInput  = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser  = game:GetService("VirtualUser")
 local LocalPlayer  = Players.LocalPlayer
 local Camera       = workspace.CurrentCamera
 
 -- ============================================================
--- CORES / TEMA HACKER
+-- TEMA HACKER
 -- ============================================================
 local Tema = {
-    Fundo      = Color3.fromRGB(8, 12, 10),
-    Painel     = Color3.fromRGB(12, 20, 16),
-    Borda      = Color3.fromRGB(0, 255, 140),
-    Texto      = Color3.fromRGB(200, 255, 220),
-    TextoDim   = Color3.fromRGB(90, 140, 110),
-    Acerto     = Color3.fromRGB(0, 255, 140),
-    Erro       = Color3.fromRGB(255, 60, 60),
-    Slider     = Color3.fromRGB(0, 180, 100),
+    Fundo    = Color3.fromRGB(8, 12, 10),
+    Painel   = Color3.fromRGB(12, 20, 16),
+    Borda    = Color3.fromRGB(0, 255, 140),
+    Texto    = Color3.fromRGB(200, 255, 220),
+    TextoDim = Color3.fromRGB(90, 140, 110),
+    Acerto   = Color3.fromRGB(0, 255, 140),
+    Erro     = Color3.fromRGB(255, 60, 60),
+    Slider   = Color3.fromRGB(0, 180, 100),
 }
 
 -- ============================================================
--- CONFIG GLOBAL
+-- CONFIG
 -- ============================================================
 local Cfg = {
-    ESP          = false,
-    ESPTeam      = true,
-    ESPBox       = true,
-    ESPName      = true,
-    ESPDist      = true,
-    ESPHealth    = true,
-    Aimbot       = false,
-    AimbotFOV    = 250,
-    AimbotSmooth = 0.35,
-    AimbotWall   = false,
-    AimbotPart   = "Head",
-    SpeedOn      = false,
-    SpeedVal     = 60,
-    JumpOn       = false,
-    JumpVal      = 100,
-    Fly          = false,
-    FlySpeed     = 60,
-    AntiAFK      = true,
-    AntiVoid     = true,
+    ESP = false, ESPTeam = true, ESPBox = true, ESPName = true, ESPDist = true, ESPHealth = true,
+    Aimbot = false, AimbotFOV = 250, AimbotSmooth = 0.35, AimbotWall = false, AimbotPart = "Head",
+    SpeedOn = false, SpeedVal = 60, JumpOn = false, JumpVal = 100,
+    Fly = false, FlySpeed = 60, AntiAFK = true, AntiVoid = true,
 }
 
 -- ============================================================
--- REMOVE UI ANTIGA (se existir)
+-- PARENT SEGURO (resolve CoreGui bloqueado no mobile)
 -- ============================================================
-local CoreGui = game:GetService("CoreGui")
-local old = CoreGui:FindFirstChild("OlhoDeDeus")
-if old then old:Destroy() end
+local _parent
+do
+    local ok, hui = pcall(function() return gethui() end)
+    if ok and hui then
+        _parent = hui
+    else
+        local ok2, core = pcall(function() return game:GetService("CoreGui") end)
+        if ok2 and core then
+            _parent = core
+        else
+            _parent = LocalPlayer:WaitForChild("PlayerGui")
+        end
+    end
+end
+
+-- remove UI antiga se existir
+for _, obj in ipairs(_parent:GetChildren()) do
+    if obj.Name == "OlhoDeDeus" then obj:Destroy() end
+end
 
 -- ============================================================
 -- HELPERS
 -- ============================================================
-local function novoInst(classe, props, pai)
+local function novo(classe, props, pai)
     local i = Instance.new(classe)
     for k, v in pairs(props or {}) do i[k] = v end
     if pai then i.Parent = pai end
     return i
 end
 
-local function dragFramee(frame, handle)
+local function drag(frame, handle)
     handle = handle or frame
-    local dragging, dragStart, startPos
+    local dragging, start, startPos
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
+            dragging = true; start = input.Position; startPos = frame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
     handle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging then
-                local delta = input.Position - dragStart
-                frame.Position = UDim2.new(
-                    startPos.X.Scale, startPos.X.Offset + delta.X,
-                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
-                )
-            end
+        if (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) and dragging then
+            local d = input.Position - start
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                                       startPos.Y.Scale, startPos.Y.Offset + d.Y)
         end
     end)
 end
 
-local function criarCorner(pai, r)
-    return novoInst("UICorner", {CornerRadius = UDim.new(0, r or 6)}, pai)
-end
-
-local function criarStroke(pai, cor, esp)
-    return novoInst("UIStroke", {Color = cor or Tema.Borda, Thickness = esp or 1}, pai)
-end
+local function corner(pai, r) return novo("UICorner", {CornerRadius = UDim.new(0, r or 6)}, pai) end
+local function stroke(pai, cor, esp) return novo("UIStroke", {Color = cor or Tema.Borda, Thickness = esp or 1}, pai) end
 
 -- ============================================================
--- SCREENGUI PRINCIPAL
+-- SCREENGUI
 -- ============================================================
-local gui = novoInst("ScreenGui", {
+local gui = novo("ScreenGui", {
     Name = "OlhoDeDeus",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     DisplayOrder = 999,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, CoreGui)
+}, _parent)
 
 -- ============================================================
--- BOTÃO FLUTUANTE (abre/fecha painel)
+-- BOTÃO FLUTUANTE
 -- ============================================================
-local btnAbrir = novoInst("TextButton", {
+local btnAbrir = novo("TextButton", {
     Name = "BtnAbrir",
     Size = UDim2.new(0, 58, 0, 58),
     Position = UDim2.new(0, 20, 0.5, -29),
@@ -135,14 +121,14 @@ local btnAbrir = novoInst("TextButton", {
     BorderSizePixel = 0,
     ZIndex = 10,
 }, gui)
-criarCorner(btnAbrir, 30)
-criarStroke(btnAbrir, Tema.Borda, 2)
-dragFramee(btnAbrir)
+corner(btnAbrir, 30)
+stroke(btnAbrir, Tema.Borda, 2)
+drag(btnAbrir)
 
 -- ============================================================
--- PAINEL PRINCIPAL
+-- PAINEL
 -- ============================================================
-local painel = novoInst("Frame", {
+local painel = novo("Frame", {
     Name = "Painel",
     Size = UDim2.new(0, 380, 0, 460),
     Position = UDim2.new(0.5, -190, 0.5, -230),
@@ -151,118 +137,79 @@ local painel = novoInst("Frame", {
     ZIndex = 5,
     Visible = false,
 }, gui)
-criarCorner(painel, 10)
-criarStroke(painel, Tema.Borda, 2)
+corner(painel, 10)
+stroke(painel, Tema.Borda, 2)
 
 -- header
-local header = novoInst("Frame", {
-    Name = "Header",
+local header = novo("Frame", {
     Size = UDim2.new(1, 0, 0, 46),
     BackgroundColor3 = Tema.Painel,
     BorderSizePixel = 0,
     ZIndex = 6,
 }, painel)
-criarCorner(header, 10)
--- corta corner inferior (fica reto)
-novoInst("Frame", {
-    Size = UDim2.new(1, 0, 0, 12),
-    Position = UDim2.new(0, 0, 1, -12),
-    BackgroundColor3 = Tema.Painel,
-    BorderSizePixel = 0,
-    ZIndex = 6,
+corner(header, 10)
+novo("Frame", {Size = UDim2.new(1, 0, 0, 12), Position = UDim2.new(0, 0, 1, -12),
+    BackgroundColor3 = Tema.Painel, BorderSizePixel = 0, ZIndex = 6}, header)
+
+novo("TextLabel", {
+    Size = UDim2.new(1, -60, 1, 0), Position = UDim2.new(0, 15, 0, 0),
+    BackgroundTransparency = 1, Text = "◉  OLHO DE DEUS  ◉",
+    TextColor3 = Tema.Borda, TextSize = 17, Font = Enum.Font.Code,
+    TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
 }, header)
 
-local titulo = novoInst("TextLabel", {
-    Size = UDim2.new(1, -60, 1, 0),
-    Position = UDim2.new(0, 15, 0, 0),
-    BackgroundTransparency = 1,
-    Text = "◉  OLHO DE DEUS  ◉",
-    TextColor3 = Tema.Borda,
-    TextSize = 17,
-    Font = Enum.Font.Code,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 7,
+local btnFechar = novo("TextButton", {
+    Size = UDim2.new(0, 30, 0, 30), Position = UDim2.new(1, -38, 0, 8),
+    BackgroundColor3 = Tema.Erro, Text = "X", TextColor3 = Color3.new(1,1,1),
+    TextSize = 16, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
 }, header)
+corner(btnFechar, 6)
 
-local btnFechar = novoInst("TextButton", {
-    Size = UDim2.new(0, 30, 0, 30),
-    Position = UDim2.new(1, -38, 0, 8),
-    BackgroundColor3 = Tema.Erro,
-    Text = "X",
-    TextColor3 = Color3.new(1,1,1),
-    TextSize = 16,
-    Font = Enum.Font.Code,
-    BorderSizePixel = 0,
-    ZIndex = 7,
-}, header)
-criarCorner(btnFechar, 6)
-
-dragFramee(painel, header)
+drag(painel, header)
 
 -- ============================================================
 -- ABAS
 -- ============================================================
 local abasNomes = {"Principal", "Visual", "Combate", "Movimento", "Diversos"}
-local abas = {}
-local conteudos = {}
+local abas, conteudos = {}, {}
 
-local barraAbas = novoInst("Frame", {
-    Size = UDim2.new(1, -20, 0, 32),
-    Position = UDim2.new(0, 10, 0, 52),
-    BackgroundColor3 = Tema.Painel,
-    BorderSizePixel = 0,
-    ZIndex = 6,
+local barra = novo("Frame", {
+    Size = UDim2.new(1, -20, 0, 32), Position = UDim2.new(0, 10, 0, 52),
+    BackgroundColor3 = Tema.Painel, BorderSizePixel = 0, ZIndex = 6,
 }, painel)
-criarCorner(barraAbas, 6)
+corner(barra, 6)
 
-local container = novoInst("ScrollingFrame", {
-    Size = UDim2.new(1, -20, 1, -100),
-    Position = UDim2.new(0, 10, 0, 92),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 4,
-    ScrollBarImageColor3 = Tema.Borda,
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    ZIndex = 6,
+local container = novo("ScrollingFrame", {
+    Size = UDim2.new(1, -20, 1, -100), Position = UDim2.new(0, 10, 0, 92),
+    BackgroundTransparency = 1, BorderSizePixel = 0,
+    ScrollBarThickness = 4, ScrollBarImageColor3 = Tema.Borda,
+    CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 6,
 }, painel)
 
 local function mostrarAba(nome)
-    for n, frame in pairs(conteudos) do
-        frame.Visible = (n == nome)
-    end
-    for n, btn in pairs(abas) do
+    for n, f in pairs(conteudos) do f.Visible = (n == nome) end
+    for n, b in pairs(abas) do
         if n == nome then
-            btn.BackgroundColor3 = Tema.Acerto
-            btn.TextColor3 = Color3.new(0, 0, 0)
+            b.BackgroundColor3 = Tema.Acerto; b.TextColor3 = Color3.new(0,0,0)
         else
-            btn.BackgroundColor3 = Tema.Fundo
-            btn.TextColor3 = Tema.TextoDim
+            b.BackgroundColor3 = Tema.Fundo; b.TextColor3 = Tema.TextoDim
         end
     end
 end
 
-local largAba = 1 / #abasNomes
+local larg = 1 / #abasNomes
 for i, nome in ipairs(abasNomes) do
-    local btn = novoInst("TextButton", {
-        Size = UDim2.new(largAba, -2, 1, 0),
-        Position = UDim2.new(largAba * (i-1), 1, 0, 0),
-        BackgroundColor3 = Tema.Fundo,
-        Text = nome,
-        TextColor3 = Tema.TextoDim,
-        TextSize = 12,
-        Font = Enum.Font.Code,
-        BorderSizePixel = 0,
-        ZIndex = 7,
-    }, barraAbas)
-    criarCorner(btn, 4)
+    local btn = novo("TextButton", {
+        Size = UDim2.new(larg, -2, 1, 0), Position = UDim2.new(larg * (i-1), 1, 0, 0),
+        BackgroundColor3 = Tema.Fundo, Text = nome, TextColor3 = Tema.TextoDim,
+        TextSize = 12, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
+    }, barra)
+    corner(btn, 4)
     abas[nome] = btn
 
-    local frame = novoInst("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        BackgroundTransparency = 1,
-        AutomaticSize = Enum.AutomaticSize.Y,
-        Visible = false,
-        ZIndex = 6,
+    local frame = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1,
+        AutomaticSize = Enum.AutomaticSize.Y, Visible = false, ZIndex = 6,
     }, container)
     conteudos[nome] = frame
 
@@ -272,144 +219,99 @@ end
 -- ============================================================
 -- COMPONENTES
 -- ============================================================
-local function novoBotao(pai, texto, callback)
-    local b = novoInst("TextButton", {
-        Size = UDim2.new(1, 0, 0, 34),
-        BackgroundColor3 = Tema.Painel,
-        Text = texto,
-        TextColor3 = Tema.Texto,
-        TextSize = 13,
-        Font = Enum.Font.Code,
-        BorderSizePixel = 0,
-        ZIndex = 6,
+local function novoBotao(pai, texto, cb)
+    local b = novo("TextButton", {
+        Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = Tema.Painel,
+        Text = texto, TextColor3 = Tema.Texto, TextSize = 13,
+        Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
     }, pai)
-    criarCorner(b, 5)
-    criarStroke(b, Tema.Borda, 1)
-    b.MouseButton1Click:Connect(callback)
+    corner(b, 5); stroke(b, Tema.Borda, 1)
+    b.MouseButton1Click:Connect(cb)
     return b
 end
 
-local function novoToggle(pai, texto, valorInicial, callback)
-    local holder = novoInst("Frame", {
-        Size = UDim2.new(1, 0, 0, 34),
-        BackgroundColor3 = Tema.Painel,
-        BorderSizePixel = 0,
-        ZIndex = 6,
+local function novoToggle(pai, texto, inicial, cb)
+    local holder = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = Tema.Painel,
+        BorderSizePixel = 0, ZIndex = 6,
     }, pai)
-    criarCorner(holder, 5)
+    corner(holder, 5)
 
-    novoInst("TextLabel", {
-        Size = UDim2.new(1, -70, 1, 0),
-        Position = UDim2.new(0, 12, 0, 0),
-        BackgroundTransparency = 1,
-        Text = texto,
-        TextColor3 = Tema.Texto,
-        TextSize = 13,
-        Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 7,
+    novo("TextLabel", {
+        Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1, Text = texto, TextColor3 = Tema.Texto,
+        TextSize = 13, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
     }, holder)
 
-    local estado = valorInicial
-    local track = novoInst("Frame", {
-        Size = UDim2.new(0, 46, 0, 22),
-        Position = UDim2.new(1, -56, 0.5, -11),
+    local estado = inicial
+    local track = novo("Frame", {
+        Size = UDim2.new(0, 46, 0, 22), Position = UDim2.new(1, -56, 0.5, -11),
         BackgroundColor3 = estado and Tema.Acerto or Tema.Fundo,
-        BorderSizePixel = 0,
-        ZIndex = 7,
+        BorderSizePixel = 0, ZIndex = 7,
     }, holder)
-    criarCorner(track, 11)
-    criarStroke(track, Tema.Borda, 1)
+    corner(track, 11); stroke(track, Tema.Borda, 1)
 
-    local knob = novoInst("Frame", {
+    local knob = novo("Frame", {
         Size = UDim2.new(0, 18, 0, 18),
         Position = estado and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9),
-        BackgroundColor3 = Color3.new(1,1,1),
-        BorderSizePixel = 0,
-        ZIndex = 8,
+        BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 8,
     }, track)
-    criarCorner(knob, 9)
+    corner(knob, 9)
 
-    local clicavel = novoInst("TextButton", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        ZIndex = 9,
-    }, holder)
-
-    clicavel.MouseButton1Click:Connect(function()
+    local click = novo("TextButton", {Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "", ZIndex = 9}, holder)
+    click.MouseButton1Click:Connect(function()
         estado = not estado
-        TweenService:Create(track, TweenInfo.new(0.15), {
-            BackgroundColor3 = estado and Tema.Acerto or Tema.Fundo
-        }):Play()
+        TweenService:Create(track, TweenInfo.new(0.15), {BackgroundColor3 = estado and Tema.Acerto or Tema.Fundo}):Play()
         TweenService:Create(knob, TweenInfo.new(0.15), {
             Position = estado and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
         }):Play()
-        callback(estado)
+        cb(estado)
     end)
     return holder
 end
 
-local function novoSlider(pai, texto, minV, maxV, valorInicial, callback)
-    local holder = novoInst("Frame", {
-        Size = UDim2.new(1, 0, 0, 52),
-        BackgroundColor3 = Tema.Painel,
-        BorderSizePixel = 0,
-        ZIndex = 6,
+local function novoSlider(pai, texto, minV, maxV, inicial, cb)
+    local holder = novo("Frame", {
+        Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = Tema.Painel,
+        BorderSizePixel = 0, ZIndex = 6,
     }, pai)
-    criarCorner(holder, 5)
+    corner(holder, 5)
 
-    local lbl = novoInst("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 20),
-        Position = UDim2.new(0, 12, 0, 4),
-        BackgroundTransparency = 1,
-        Text = texto .. ": " .. tostring(valorInicial),
-        TextColor3 = Tema.Texto,
-        TextSize = 13,
-        Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 7,
+    local lbl = novo("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 20), Position = UDim2.new(0, 12, 0, 4),
+        BackgroundTransparency = 1, Text = texto .. ": " .. tostring(inicial),
+        TextColor3 = Tema.Texto, TextSize = 13, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
     }, holder)
 
-    local track = novoInst("Frame", {
-        Size = UDim2.new(1, -24, 0, 6),
-        Position = UDim2.new(0, 12, 0, 36),
-        BackgroundColor3 = Tema.Fundo,
-        BorderSizePixel = 0,
-        ZIndex = 7,
+    local track = novo("Frame", {
+        Size = UDim2.new(1, -24, 0, 6), Position = UDim2.new(0, 12, 0, 36),
+        BackgroundColor3 = Tema.Fundo, BorderSizePixel = 0, ZIndex = 7,
     }, holder)
-    criarCorner(track, 3)
+    corner(track, 3)
 
-    local pct = (valorInicial - minV) / (maxV - minV)
-    local fill = novoInst("Frame", {
-        Size = UDim2.new(pct, 0, 1, 0),
-        BackgroundColor3 = Tema.Slider,
-        BorderSizePixel = 0,
-        ZIndex = 8,
+    local pct = (inicial - minV) / (maxV - minV)
+    local fill = novo("Frame", {
+        Size = UDim2.new(pct, 0, 1, 0), BackgroundColor3 = Tema.Slider,
+        BorderSizePixel = 0, ZIndex = 8,
     }, track)
-    criarCorner(fill, 3)
+    corner(fill, 3)
 
     local dragging = false
-    local clicavel = novoInst("TextButton", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        ZIndex = 9,
-    }, track)
+    local click = novo("TextButton", {Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "", ZIndex = 9}, track)
 
     local function atualizar(input)
         local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
         local val = math.floor(minV + (maxV - minV) * rel)
         fill.Size = UDim2.new(rel, 0, 1, 0)
         lbl.Text = texto .. ": " .. tostring(val)
-        callback(val)
+        cb(val)
     end
 
-    clicavel.InputBegan:Connect(function(input)
+    click.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            atualizar(input)
+            dragging = true; atualizar(input)
         end
     end)
     UserInput.InputChanged:Connect(function(input)
@@ -427,64 +329,42 @@ local function novoSlider(pai, texto, minV, maxV, valorInicial, callback)
     return holder
 end
 
-local function listaVertical(aba, gap)
-    local ui = novoInst("UIListLayout", {
-        Padding = UDim.new(0, gap or 6),
-        SortOrder = Enum.SortOrder.LayoutOrder,
+local function lista(aba, gap)
+    novo("UIListLayout", {
+        Padding = UDim.new(0, gap or 6), SortOrder = Enum.SortOrder.LayoutOrder,
     }, conteudos[aba])
-    novoInst("UIPadding", {
-        PaddingTop = UDim.new(0, 4),
-        PaddingLeft = UDim.new(0, 4),
+    novo("UIPadding", {
+        PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4),
         PaddingRight = UDim.new(0, 4),
     }, conteudos[aba])
-    return ui
 end
 
 -- ============================================================
--- ABA PRINCIPAL
+-- CONTEÚDO DAS ABAS
 -- ============================================================
-listaVertical("Principal", 8)
-novoInst("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 24),
-    BackgroundTransparency = 1,
-    Text = "> Sistema inicializado",
-    TextColor3 = Tema.Acerto,
-    TextSize = 12,
-    Font = Enum.Font.Code,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    LayoutOrder = 1,
+lista("Principal", 8)
+novo("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1,
+    Text = "> Sistema inicializado", TextColor3 = Tema.Acerto,
+    TextSize = 12, Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1,
 }, conteudos["Principal"])
-novoBotao(conteudos["Principal"], "[ Re-carregar ]", function()
-    Cfg = Cfg -- noop
-end).LayoutOrder = 2
-novoBotao(conteudos["Principal"], "[ Destruir UI ]", function()
-    gui:Destroy()
-end).LayoutOrder = 3
+novoBotao(conteudos["Principal"], "[ Destruir UI ]", function() gui:Destroy() end).LayoutOrder = 2
 
--- ============================================================
--- ABA VISUAL (ESP)
--- ============================================================
-listaVertical("Visual", 6)
-novoToggle(conteudos["Visual"], "ESP Ativado",   false, function(v) Cfg.ESP = v end).LayoutOrder = 1
-novoToggle(conteudos["Visual"], "Ignorar Time",  true,  function(v) Cfg.ESPTeam = v end).LayoutOrder = 2
-novoToggle(conteudos["Visual"], "Caixa",         true,  function(v) Cfg.ESPBox = v end).LayoutOrder = 3
-novoToggle(conteudos["Visual"], "Nome",          true,  function(v) Cfg.ESPName = v end).LayoutOrder = 4
-novoToggle(conteudos["Visual"], "Distância",     true,  function(v) Cfg.ESPDist = v end).LayoutOrder = 5
-novoToggle(conteudos["Visual"], "Barra de Vida", true,  function(v) Cfg.ESPHealth = v end).LayoutOrder = 6
+lista("Visual", 6)
+novoToggle(conteudos["Visual"], "ESP Ativado", false, function(v) Cfg.ESP = v end).LayoutOrder = 1
+novoToggle(conteudos["Visual"], "Ignorar Time", true, function(v) Cfg.ESPTeam = v end).LayoutOrder = 2
+novoToggle(conteudos["Visual"], "Caixa", true, function(v) Cfg.ESPBox = v end).LayoutOrder = 3
+novoToggle(conteudos["Visual"], "Nome", true, function(v) Cfg.ESPName = v end).LayoutOrder = 4
+novoToggle(conteudos["Visual"], "Distância", true, function(v) Cfg.ESPDist = v end).LayoutOrder = 5
+novoToggle(conteudos["Visual"], "Barra de Vida", true, function(v) Cfg.ESPHealth = v end).LayoutOrder = 6
 
--- ============================================================
--- ABA COMBATE
--- ============================================================
-listaVertical("Combate", 6)
+lista("Combate", 6)
 novoToggle(conteudos["Combate"], "Aimbot", false, function(v) Cfg.Aimbot = v end).LayoutOrder = 1
 novoToggle(conteudos["Combate"], "Checar Parede", false, function(v) Cfg.AimbotWall = v end).LayoutOrder = 2
 novoSlider(conteudos["Combate"], "FOV", 50, 800, 250, function(v) Cfg.AimbotFOV = v end).LayoutOrder = 3
 novoSlider(conteudos["Combate"], "Suavidade %", 5, 100, 35, function(v) Cfg.AimbotSmooth = v / 100 end).LayoutOrder = 4
 
--- ============================================================
--- ABA MOVIMENTO
--- ============================================================
-listaVertical("Movimento", 6)
+lista("Movimento", 6)
 novoToggle(conteudos["Movimento"], "Speed", false, function(v) Cfg.SpeedOn = v end).LayoutOrder = 1
 novoSlider(conteudos["Movimento"], "Velocidade", 16, 300, 60, function(v) Cfg.SpeedVal = v end).LayoutOrder = 2
 novoToggle(conteudos["Movimento"], "Jump Boost", false, function(v) Cfg.JumpOn = v end).LayoutOrder = 3
@@ -495,14 +375,8 @@ novoToggle(conteudos["Movimento"], "Fly", false, function(v)
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     if v then
-        local bv = Instance.new("BodyVelocity", hrp)
-        bv.Name = "ODD_FlyBV"
-        bv.MaxForce = Vector3.new(1e5,1e5,1e5)
-        bv.Velocity = Vector3.zero
-        local bg = Instance.new("BodyGyro", hrp)
-        bg.Name = "ODD_FlyBG"
-        bg.MaxTorque = Vector3.new(1e5,1e5,1e5)
-        bg.P = 3000
+        local bv = Instance.new("BodyVelocity", hrp); bv.Name = "ODD_FlyBV"; bv.MaxForce = Vector3.new(1e5,1e5,1e5); bv.Velocity = Vector3.zero
+        local bg = Instance.new("BodyGyro", hrp); bg.Name = "ODD_FlyBG"; bg.MaxTorque = Vector3.new(1e5,1e5,1e5); bg.P = 3000
     else
         local bv = hrp:FindFirstChild("ODD_FlyBV"); if bv then bv:Destroy() end
         local bg = hrp:FindFirstChild("ODD_FlyBG"); if bg then bg:Destroy() end
@@ -510,54 +384,38 @@ novoToggle(conteudos["Movimento"], "Fly", false, function(v)
 end).LayoutOrder = 5
 novoSlider(conteudos["Movimento"], "Vel. Fly", 20, 400, 60, function(v) Cfg.FlySpeed = v end).LayoutOrder = 6
 
--- ============================================================
--- ABA DIVERSOS
--- ============================================================
-listaVertical("Diversos", 6)
+lista("Diversos", 6)
 novoToggle(conteudos["Diversos"], "Anti-AFK", true, function(v) Cfg.AntiAFK = v end).LayoutOrder = 1
 novoToggle(conteudos["Diversos"], "Anti-Void", true, function(v) Cfg.AntiVoid = v end).LayoutOrder = 2
 
 -- ============================================================
--- BOTÕES ABRIR / FECHAR
+-- ABRIR / FECHAR
 -- ============================================================
 btnAbrir.MouseButton1Click:Connect(function()
-    painel.Visible = true
-    btnAbrir.Visible = false
-    mostrarAba("Principal")
+    painel.Visible = true; btnAbrir.Visible = false; mostrarAba("Principal")
 end)
 btnFechar.MouseButton1Click:Connect(function()
-    painel.Visible = false
-    btnAbrir.Visible = true
+    painel.Visible = false; btnAbrir.Visible = true
 end)
 
 mostrarAba("Principal")
 
 -- ============================================================
--- ESP (Drawing protegido por pcall)
+-- ESP (Drawing opcional)
 -- ============================================================
 local temDrawing = pcall(function() local d = Drawing.new("Square"); d:Remove() end)
 local desenhos = {}
 
 if temDrawing then
-    local function limparESP(plr)
-        local d = desenhos[plr]
-        if not d then return end
+    local function limpar(plr)
+        local d = desenhos[plr]; if not d then return end
         for _, v in pairs(d) do v:Remove() end
         desenhos[plr] = nil
     end
 
-    local function criarESP()
-        return {
-            box    = Drawing.new("Square"),
-            nome   = Drawing.new("Text"),
-            dist   = Drawing.new("Text"),
-            hp     = Drawing.new("Square"),
-        }
-    end
-
     RunService.RenderStepped:Connect(function()
         if not Cfg.ESP then
-            for plr in pairs(desenhos) do limparESP(plr) end
+            for plr in pairs(desenhos) do limpar(plr) end
             return
         end
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -566,61 +424,52 @@ if temDrawing then
             local head = char and char:FindFirstChild("Head")
             local hrp  = char and char:FindFirstChild("HumanoidRootPart")
             local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            if not (head and hrp and hum and hum.Health > 0) then
-                limparESP(plr); continue
-            end
-            if Cfg.ESPTeam and plr.Team == LocalPlayer.Team then
-                limparESP(plr); continue
-            end
+            if not (head and hrp and hum and hum.Health > 0) then limpar(plr); continue end
+            if Cfg.ESPTeam and plr.Team == LocalPlayer.Team then limpar(plr); continue end
 
             local d = desenhos[plr]
-            if not d then d = criarESP(); desenhos[plr] = d end
-
-            local hp, onScreen = Camera:WorldToViewportPoint(head.Position)
-            local rp = Camera:WorldToViewportPoint(hrp.Position)
-            if not onScreen then
-                for _, v in pairs(d) do v.Visible = false end
-                continue
+            if not d then
+                d = {
+                    box  = Drawing.new("Square"),
+                    nome = Drawing.new("Text"),
+                    dist = Drawing.new("Text"),
+                    hp   = Drawing.new("Square"),
+                }
+                desenhos[plr] = d
             end
+
+            local hp, on = Camera:WorldToViewportPoint(head.Position)
+            local rp = Camera:WorldToViewportPoint(hrp.Position)
+            if not on then for _, v in pairs(d) do v.Visible = false end; continue end
 
             local h = math.abs(rp.Y - hp.Y) * 1.8
             local w = h * 0.55
 
             if Cfg.ESPBox then
-                d.box.Visible = true
-                d.box.Size = Vector2.new(w, h)
+                d.box.Visible = true; d.box.Size = Vector2.new(w, h)
                 d.box.Position = Vector2.new(hp.X - w/2, hp.Y - h/2)
-                d.box.Color = Tema.Borda
-                d.box.Thickness = 1
+                d.box.Color = Tema.Borda; d.box.Thickness = 1
             else d.box.Visible = false end
 
             if Cfg.ESPName then
-                d.nome.Visible = true
-                d.nome.Text = plr.Name
-                d.nome.Size = 14
-                d.nome.Center = true
-                d.nome.Outline = true
-                d.nome.Color = Tema.Borda
+                d.nome.Visible = true; d.nome.Text = plr.Name; d.nome.Size = 14
+                d.nome.Center = true; d.nome.Outline = true; d.nome.Color = Tema.Borda
                 d.nome.Position = Vector2.new(hp.X, hp.Y - h/2 - 16)
             else d.nome.Visible = false end
 
             if Cfg.ESPDist then
                 d.dist.Visible = true
                 d.dist.Text = math.floor((hrp.Position - Camera.CFrame.Position).Magnitude) .. "m"
-                d.dist.Size = 12
-                d.dist.Center = true
-                d.dist.Outline = true
+                d.dist.Size = 12; d.dist.Center = true; d.dist.Outline = true
                 d.dist.Color = Color3.new(1,1,1)
                 d.dist.Position = Vector2.new(hp.X, hp.Y + h/2 + 2)
             else d.dist.Visible = false end
 
             if Cfg.ESPHealth then
                 local pct = hum.Health / hum.MaxHealth
-                d.hp.Visible = true
-                d.hp.Size = Vector2.new(3, h * pct)
+                d.hp.Visible = true; d.hp.Size = Vector2.new(3, h * pct)
                 d.hp.Position = Vector2.new(hp.X - w/2 - 6, hp.Y - h/2 + (h - h*pct))
-                d.hp.Color = Color3.fromRGB(255*(1-pct), 255*pct, 0)
-                d.hp.Filled = true
+                d.hp.Color = Color3.fromRGB(255*(1-pct), 255*pct, 0); d.hp.Filled = true
             else d.hp.Visible = false end
         end
     end)
@@ -645,8 +494,8 @@ RunService.RenderStepped:Connect(function()
                     local hit = workspace:Raycast(Camera.CFrame.Position, part.Position - Camera.CFrame.Position, params)
                     if hit then continue end
                 end
-                local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-                if onScreen then
+                local sp, on = Camera:WorldToViewportPoint(part.Position)
+                if on then
                     local d = (Vector2.new(sp.X, sp.Y) - centro).Magnitude
                     if d < menorD then alvo, menorD = part, d end
                 end
@@ -659,7 +508,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ============================================================
--- SPEED / JUMP / FLY LOOP
+-- SPEED / JUMP / FLY
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
@@ -669,7 +518,6 @@ RunService.Heartbeat:Connect(function()
         hum.WalkSpeed = Cfg.SpeedOn and Cfg.SpeedVal or 16
         hum.JumpPower = Cfg.JumpOn and Cfg.JumpVal or 50
     end
-
     if Cfg.Fly and hrp then
         local bv = hrp:FindFirstChild("ODD_FlyBV")
         local bg = hrp:FindFirstChild("ODD_FlyBG")
@@ -707,7 +555,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ============================================================
--- READY
--- ============================================================
 print("[OLHO DE DEUS] UI carregada com sucesso.")
