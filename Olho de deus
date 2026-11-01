@@ -1,1156 +1,412 @@
---[[
-    OLHO DE DEUS v6.0 — OMEGA MOBILE
-    Interface mobile-first: touch 44px, painel fullscreen, abas com scroll
-    Tabs: SCANNER | EDITOR | CONSOLE | INJETOR | REMOTES | BYPASS | DUMP | TELEPORT | MONITOR
-]]
+--[[ OLHO DE DEUS v7.1 — ABAS + COMPACTO ]]
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
 local UserInput   = game:GetService("UserInputService")
-local Tween       = game:GetService("TweenService")
-local LogService  = game:GetService("LogService")
 local Replicated  = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local LocalPlayer = Players.LocalPlayer
-local Camera      = workspace.CurrentCamera
+local LP          = Players.LocalPlayer
+local Cam         = workspace.CurrentCamera
+local IS_MOB      = UserInput.TouchEnabled and not UserInput.KeyboardEnabled
 
--- ============================================================
--- DETECÇÃO MOBILE
--- ============================================================
-local IS_MOBILE = UserInput.TouchEnabled and not UserInput.KeyboardEnabled
-local VIEW      = Camera.ViewportSize
-local TAM       = 14            -- tamanho base de fonte
-local H_TOUCH   = IS_MOBILE and 44 or 32  -- altura toque
-local PAD       = IS_MOBILE and 10 or 8
-
--- recalc em resize
-local function tamPainel()
-    local v = Camera.ViewportSize
-    if IS_MOBILE then
-        return UDim2.new(1, -20, 1, -140)
-    end
-    local w = math.min(560, v.X - 100)
-    local h = math.min(700, v.Y - 100)
-    return UDim2.new(0, w, 0, h)
-end
-
--- ============================================================
--- TEMA
--- ============================================================
-local T = {
-    Fundo    = Color3.fromRGB(4, 6, 5),
-    Painel   = Color3.fromRGB(9, 14, 11),
-    Painel2  = Color3.fromRGB(13, 20, 16),
-    Borda    = Color3.fromRGB(0, 255, 140),
-    BordaDim = Color3.fromRGB(0, 90, 55),
-    Texto    = Color3.fromRGB(180, 255, 210),
-    Dim      = Color3.fromRGB(0, 140, 85),
-    Alerta   = Color3.fromRGB(255, 200, 0),
-    Erro     = Color3.fromRGB(255, 60, 60),
-    Hacker   = Color3.fromRGB(0, 255, 140),
-    Perigo   = Color3.fromRGB(255, 30, 30),
+local C = {
+    BG=Color3.fromRGB(5,8,6), PAN=Color3.fromRGB(11,17,13), PAN2=Color3.fromRGB(16,24,19),
+    B=Color3.fromRGB(0,255,140), BD=Color3.fromRGB(0,90,55), TX=Color3.fromRGB(180,255,210),
+    DM=Color3.fromRGB(0,130,80), AL=Color3.fromRGB(255,200,0), ER=Color3.fromRGB(255,70,70),
 }
+local S = {alvo=nil, hooks={}}
 
--- ============================================================
--- ESTADO
--- ============================================================
-local State = {
-    alvo = nil, historico = {}, hooks = {}, bypassOn = false,
-}
-
-local function logAdd(msg, tipo)
-    local cor = T.Hacker
-    if tipo == "erro" then cor = T.Erro
-    elseif tipo == "alerta" then cor = T.Alerta
-    elseif tipo == "dim" then cor = T.Dim
-    elseif tipo == "perigo" then cor = T.Perigo end
-    table.insert(State.historico, {texto = msg, cor = cor})
-    if #State.historico > 500 then table.remove(State.historico, 1) end
-end
-
--- ============================================================
--- PARENT SEGURO
--- ============================================================
-local _parent
+local P
 do
-    local ok, hui = pcall(function() return gethui() end)
-    if ok and hui then _parent = hui
-    else
-        local ok2, core = pcall(function() return game:GetService("CoreGui") end)
-        _parent = (ok2 and core) or LocalPlayer:WaitForChild("PlayerGui")
+    local ok,h=pcall(function() return gethui() end)
+    if ok and h then P=h else
+        local ok2,c=pcall(function() return game:GetService("CoreGui") end)
+        P=(ok2 and c) or LP:WaitForChild("PlayerGui")
     end
 end
-for _, o in ipairs(_parent:GetChildren()) do
-    if o.Name == "OlhoDeDeus" then o:Destroy() end
+for _,o in ipairs(P:GetChildren()) do if o.Name=="OlhoDeDeus" then o:Destroy() end end
+
+local function N(c,p,pp) local i=Instance.new(c); for k,v in pairs(p or {}) do i[k]=v end; if pp then i.Parent=pp end; return i end
+local function CR(p,r) return N("UICorner",{CornerRadius=UDim.new(0,r or 6)},p) end
+local function ST(p,c,t) return N("UIStroke",{Color=c or C.B,Thickness=t or 1},p) end
+local function DRAG(f,h)
+    h=h or f; local on,sp,pos
+    h.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then on=true;sp=i.Position;pos=f.Position;i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then on=false end end) end end)
+    h.InputChanged:Connect(function(i) if on and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-sp; f.Position=UDim2.new(pos.X.Scale,pos.X.Offset+d.X,pos.Y.Scale,pos.Y.Offset+d.Y) end end)
 end
 
--- ============================================================
--- HELPERS
--- ============================================================
-local function novo(c, props, pai)
-    local i = Instance.new(c)
-    for k, v in pairs(props or {}) do i[k] = v end
-    if pai then i.Parent = pai end
-    return i
-end
-local function corner(p, r) return novo("UICorner", {CornerRadius = UDim.new(0, r or 8)}, p) end
-local function stroke(p, c, t) return novo("UIStroke", {Color = c or T.Borda, Thickness = t or 1}, p) end
+local gui = N("ScreenGui",{Name="OlhoDeDeus",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},P)
 
-local function drag(frame, handle)
-    handle = handle or frame
-    local on, sp, spPos
-    handle.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-            on = true; sp = i.Position; spPos = frame.Position
-            i.Changed:Connect(function()
-                if i.UserInputState == Enum.UserInputState.End then on = false end
-            end)
-        end
-    end)
-    handle.InputChanged:Connect(function(i)
-        if on and (i.UserInputType == Enum.UserInputType.MouseMovement
-        or i.UserInputType == Enum.UserInputType.Touch) then
-            local d = i.Position - sp
-            frame.Position = UDim2.new(spPos.X.Scale, spPos.X.Offset + d.X,
-                                       spPos.Y.Scale, spPos.Y.Offset + d.Y)
-        end
-    end)
-end
+local abrir = N("TextButton",{Size=UDim2.new(0,54,0,54),Position=UDim2.new(1,-72,0,72),BackgroundColor3=C.PAN,Text="◉",TextColor3=C.B,TextSize=24,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=10},gui)
+CR(abrir,27); ST(abrir,C.B,2); DRAG(abrir)
 
--- ============================================================
--- ROOT GUI
--- ============================================================
-local gui = novo("ScreenGui", {
-    Name = "OlhoDeDeus", ResetOnSpawn = false,
-    IgnoreGuiInset = true, DisplayOrder = 999,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, _parent)
+local painel = N("Frame",{Size=UDim2.new(1,-16,1,-130),Position=UDim2.new(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),BackgroundColor3=C.BG,BorderSizePixel=0,ZIndex=5,Visible=false},gui)
+CR(painel,8); ST(painel,C.B,2)
 
--- BOTÃO FLUTUANTE (canto superior direito, 56x56 touch)
-local btnAbrir = novo("TextButton", {
-    Size = UDim2.new(0, 60, 0, 60),
-    Position = UDim2.new(1, -80, 0, 80),
-    BackgroundColor3 = T.Painel, Text = "◉\nOLHO",
-    TextColor3 = T.Borda, TextSize = 13, Font = Enum.Font.Code,
-    BorderSizePixel = 0, ZIndex = 10,
-}, gui)
-corner(btnAbrir, 30); stroke(btnAbrir, T.Borda, 2)
-drag(btnAbrir)
+local hd = N("Frame",{Size=UDim2.new(1,0,0,46),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},painel)
+CR(hd,8)
+N("Frame",{Size=UDim2.new(1,0,0,8),Position=UDim2.new(0,0,1,-8),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},hd)
+N("TextLabel",{Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,14,0,0),BackgroundTransparency=1,Text="◉ OLHO DE DEUS",TextColor3=C.B,TextSize=IS_MOB and 15 or 14,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7},hd)
+local fechar=N("TextButton",{Size=UDim2.new(0,34,0,34),Position=UDim2.new(1,-42,0.5,-17),BackgroundColor3=C.ER,Text="X",TextColor3=Color3.new(1,1,1),TextSize=16,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7},hd)
+CR(fechar,6); DRAG(painel,hd)
 
--- PAINEL RESPONSIVO
-local painel = novo("Frame", {
-    Size = tamPainel(),
-    Position = UDim2.new(0.5, 0, 0.5, 0),
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    BackgroundColor3 = T.Fundo, BorderSizePixel = 0, ZIndex = 5, Visible = false,
-}, gui)
-corner(painel, 10); stroke(painel, T.Borda, 2)
+-- barra de abas (scroll horizontal)
+local bw = N("Frame",{Size=UDim2.new(1,-16,0,44),Position=UDim2.new(0,8,0,54),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},painel)
+CR(bw,6)
+local bar = N("ScrollingFrame",{Size=UDim2.new(1,-8,1,-8),Position=UDim2.new(0,4,0,4),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.X,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.X,ZIndex=7},bw)
+N("UIListLayout",{Padding=UDim.new(0,4),FillDirection=Enum.FillDirection.Horizontal,VerticalAlignment=Enum.VerticalAlignment.Center,SortOrder=Enum.SortOrder.LayoutOrder},bar)
 
--- reposicionar em resize (rotação de tela)
-Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-    painel.Size = tamPainel()
-    VIEW = Camera.ViewportSize
-end)
+local cont = N("Frame",{Size=UDim2.new(1,-16,1,-104),Position=UDim2.new(0,8,0,100),BackgroundTransparency=1,ZIndex=6},painel)
 
--- HEADER
-local headerH = IS_MOBILE and 54 or 48
-local header = novo("Frame", {
-    Size = UDim2.new(1, 0, 0, headerH),
-    BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6,
-}, painel)
-corner(header, 10)
-novo("Frame", {Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 1, -10),
-    BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6}, header)
+local abasNomes = {"SCAN","EDIT","CONS","INJ","REM","BYP","DUMP","TP","MON"}
+local abas, conts = {}, {}
 
-novo("TextLabel", {
-    Size = UDim2.new(1, -160, 1, 0), Position = UDim2.new(0, 16, 0, 0),
-    BackgroundTransparency = 1, Text = "◉ OLHO DE DEUS",
-    TextColor3 = T.Borda, TextSize = IS_MOBILE and 17 or 16,
-    Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
-}, header)
-
-local statusHdr = novo("TextLabel", {
-    Size = UDim2.new(0, 120, 1, 0), Position = UDim2.new(1, -170, 0, 0),
-    BackgroundTransparency = 1, Text = "● ONLINE",
-    TextColor3 = T.Hacker, TextSize = IS_MOBILE and 11 or 10,
-    Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 7,
-}, header)
-
-local btnFechar = novo("TextButton", {
-    Size = UDim2.new(0, 40, 0, 40),
-    Position = UDim2.new(1, -48, 0.5, -20),
-    BackgroundColor3 = T.Erro, Text = "X", TextColor3 = Color3.new(1,1,1),
-    TextSize = 18, Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 7,
-}, header)
-corner(btnFechar, 8)
-drag(painel, header)
-
--- ============================================================
--- ABAS COM SCROLL HORIZONTAL (mobile-friendly)
--- ============================================================
-local abasNomes = {"SCANNER","EDITOR","CONSOLE","INJETOR","REMOTES","BYPASS","DUMP","TELEPORT","MONITOR"}
-local abas, conteudos = {}, {}
-
-local barraWrap = novo("Frame", {
-    Size = UDim2.new(1, -20, 0, IS_MOBILE and 52 or 44),
-    Position = UDim2.new(0, 10, 0, headerH + 8),
-    BackgroundColor3 = T.Painel, BorderSizePixel = 0, ZIndex = 6,
-}, painel)
-corner(barraWrap, 8)
-
-local barra = novo("ScrollingFrame", {
-    Size = UDim2.new(1, -8, 1, -8),
-    Position = UDim2.new(0, 4, 0, 4),
-    BackgroundTransparency = 1, BorderSizePixel = 0,
-    ScrollBarThickness = 0,
-    ScrollingDirection = Enum.ScrollingDirection.X,
-    CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 7,
-    AutomaticCanvasSize = Enum.AutomaticSize.X,
-    HorizontalScrollBarInset = Enum.ScrollBarInset.None,
-}, barraWrap)
-novo("UIListLayout", {
-    Padding = UDim.new(0, 4), FillDirection = Enum.FillDirection.Horizontal,
-    VerticalAlignment = Enum.VerticalAlignment.Center,
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, barra)
-
-local container = novo("Frame", {
-    Size = UDim2.new(1, -20, 1, -(headerH + (IS_MOBILE and 76 or 68))),
-    Position = UDim2.new(0, 10, 0, headerH + (IS_MOBILE and 68 or 60)),
-    BackgroundTransparency = 1, ZIndex = 6,
-}, painel)
-
-local function mostrarAba(nome)
-    for n, f in pairs(conteudos) do f.Visible = (n == nome) end
-    for n, b in pairs(abas) do
-        if n == nome then b.BackgroundColor3 = T.Hacker; b.TextColor3 = Color3.new(0,0,0)
-        else b.BackgroundColor3 = T.Fundo; b.TextColor3 = T.Dim end
+local function mostrar(nome)
+    for n,f in pairs(conts) do f.Visible=(n==nome) end
+    for n,b in pairs(abas) do
+        if n==nome then b.BackgroundColor3=C.B; b.TextColor3=Color3.new(0,0,0)
+        else b.BackgroundColor3=C.BG; b.TextColor3=C.DM end
     end
 end
 
-for i, nome in ipairs(abasNomes) do
-    local w = IS_MOBILE and 84 or 74
-    local b = novo("TextButton", {
-        Size = UDim2.new(0, w, 1, 0),
-        BackgroundColor3 = T.Fundo, Text = nome, TextColor3 = T.Dim,
-        TextSize = IS_MOBILE and 12 or 11, Font = Enum.Font.Code,
-        BorderSizePixel = 0, ZIndex = 7, LayoutOrder = i,
-    }, barra)
-    corner(b, 5)
-    abas[nome] = b
-    local f = novo("Frame", {
-        Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, ZIndex = 6,
-    }, container)
-    conteudos[nome] = f
-    b.MouseButton1Click:Connect(function() mostrarAba(nome) end)
+for i,nome in ipairs(abasNomes) do
+    local b=N("TextButton",{Size=UDim2.new(0,IS_MOB and 68 or 60,1,0),BackgroundColor3=C.BG,Text=nome,TextColor3=C.DM,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,LayoutOrder=i},bar)
+    CR(b,4)
+    abas[nome]=b
+    local f=N("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false,ZIndex=6},cont)
+    conts[nome]=f
+    b.MouseButton1Click:Connect(function() mostrar(nome) end)
 end
 
--- ============================================================
--- COMPONENTES MOBILE
--- ============================================================
-local function botao(pai, texto, cb, cor)
-    local b = novo("TextButton", {
-        Size = UDim2.new(1, 0, 0, H_TOUCH),
-        BackgroundColor3 = T.Painel,
-        Text = texto, TextColor3 = cor or T.Texto,
-        TextSize = IS_MOBILE and 14 or 12,
-        Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, pai)
-    novo("UIPadding", {PaddingLeft = UDim.new(0, IS_MOBILE and 14 or 10)}, b)
-    corner(b, 6); stroke(b, T.BordaDim, 1)
+-- componentes
+local function btn(pai,txt,cb,cor)
+    local b=N("TextButton",{Size=UDim2.new(1,0,0,IS_MOB and 40 or 30),BackgroundColor3=C.PAN,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 12 or 11,Font=Enum.Font.Code,BorderSizePixel=0,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=6},pai)
+    N("UIPadding",{PaddingLeft=UDim.new(0,10)},b); CR(b,4); ST(b,C.BD,1)
     b.MouseButton1Click:Connect(cb)
     return b
 end
 
-local function terminal(pai, altura)
-    local s = novo("ScrollingFrame", {
-        Size = UDim2.new(1, 0, 0, altura or 200), BackgroundColor3 = T.Painel,
-        BorderSizePixel = 0, ScrollBarThickness = IS_MOBILE and 8 or 4,
-        ScrollBarImageColor3 = T.BordaDim,
-        CanvasSize = UDim2.new(0,0,0,0), ZIndex = 6, AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    }, pai)
-    corner(s, 6); stroke(s, T.BordaDim, 1)
-    novo("UIListLayout", {Padding = UDim.new(0, IS_MOBILE and 2 or 1), SortOrder = Enum.SortOrder.LayoutOrder}, s)
-    novo("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 8), PaddingBottom = UDim.new(0, 6)}, s)
+local function term(pai,h)
+    local s=N("ScrollingFrame",{Size=UDim2.new(1,0,0,h),BackgroundColor3=C.PAN,BorderSizePixel=0,ScrollBarThickness=IS_MOB and 6 or 4,ScrollBarImageColor3=C.BD,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=6},pai)
+    CR(s,4); ST(s,C.BD,1)
+    N("UIListLayout",{Padding=UDim.new(0,1),SortOrder=Enum.SortOrder.LayoutOrder},s)
+    N("UIPadding",{PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,4),PaddingLeft=UDim.new(0,6),PaddingRight=UDim.new(0,6)},s)
     return s
 end
 
-local function escreve(pai, txt, cor, ord)
-    novo("TextLabel", {
-        Size = UDim2.new(1, 0, 0, IS_MOBILE and 18 or 15), BackgroundTransparency = 1,
-        Text = txt, TextColor3 = cor or T.Texto,
-        TextSize = IS_MOBILE and 13 or 11,
-        Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 7, LayoutOrder = ord or 0, TextTruncate = Enum.TextTruncate.AtEnd,
-    }, pai)
+local function linha(s,txt,cor,ord)
+    N("TextLabel",{Size=UDim2.new(1,0,0,IS_MOB and 16 or 14),BackgroundTransparency=1,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,LayoutOrder=ord or 0,TextTruncate=Enum.TextTruncate.AtEnd},s)
 end
 
--- ============================================================
--- ABA: SCANNER
--- ============================================================
-local sc = conteudos["SCANNER"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, sc)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, sc)
+-- SCANNER
+local sc=conts["SCAN"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},sc)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},sc)
 
-local scanBtns = novo("Frame", {Size = UDim2.new(1, 0, 0, IS_MOBILE and 320 or 200), BackgroundTransparency = 1, LayoutOrder = 1}, sc)
-novo("UIGridLayout", {
-    CellSize = UDim2.new(0.5, -3, 0, IS_MOBILE and 40 or 28),
-    CellPadding = UDim2.new(0, 6, 0, 6),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, scanBtns)
+local btnsF=N("Frame",{Size=UDim2.new(1,0,0,IS_MOB and 140 or 100),BackgroundTransparency=1,LayoutOrder=1},sc)
+N("UIGridLayout",{CellSize=UDim2.new(0.5,-2,0,IS_MOB and 32 or 26),CellPadding=UDim2.new(0,4,0,4),SortOrder=Enum.SortOrder.LayoutOrder},btnsF)
 
-local resultadosScroll = terminal(sc, IS_MOBILE and 360 or 320)
-resultadosScroll.LayoutOrder = 2
+local listaSc=term(sc,IS_MOB and 320 or 280)
+listaSc.LayoutOrder=2
+local ordSc=0
 
-local infoLabel = novo("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
-    Text = "> Aguardando scan...", TextColor3 = T.Dim,
-    TextSize = IS_MOBILE and 12 or 11, Font = Enum.Font.Code,
-    TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 3,
-}, sc)
-
-local ord = 0
-local function addResult(nome, classe, path, inst)
-    ord += 1
-    local b = novo("TextButton", {
-        Size = UDim2.new(1, -4, 0, IS_MOBILE and 34 or 24),
-        BackgroundColor3 = T.Painel2, Text = "", BorderSizePixel = 0,
-        LayoutOrder = ord, ZIndex = 7,
-    }, resultadosScroll)
-    corner(b, 4)
-    novo("TextLabel", {
-        Size = UDim2.new(0, 90, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1, Text = classe, TextColor3 = T.Hacker,
-        TextSize = IS_MOBILE and 11 or 10, Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    }, b)
-    novo("TextLabel", {
-        Size = UDim2.new(1, -100, 1, 0), Position = UDim2.new(0, 100, 0, 0),
-        BackgroundTransparency = 1, Text = nome, TextColor3 = T.Texto,
-        TextSize = IS_MOBILE and 12 or 11, Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    }, b)
-    b.MouseButton1Click:Connect(function()
-        State.alvo = inst
-        logAdd("[SEL] " .. path, "info")
-        mostrarAba("EDITOR")
-        if _G.ODD_RefreshEditor then _G.ODD_RefreshEditor() end
-    end)
+local function addSc(nome,classe,path,inst)
+    ordSc+=1
+    local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=ordSc},listaSc)
+    CR(b,3)
+    N("TextLabel",{Size=UDim2.new(0,70,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text=classe,TextColor3=C.B,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,TextTruncate=Enum.TextTruncate.AtEnd},b)
+    N("TextLabel",{Size=UDim2.new(1,-80,1,0),Position=UDim2.new(0,80,0,0),BackgroundTransparency=1,Text=nome,TextColor3=C.TX,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,TextTruncate=Enum.TextTruncate.AtEnd},b)
+    b.MouseButton1Click:Connect(function() S.alvo=inst; mostrar("EDIT"); if _G.ODD_ED then pcall(_G.ODD_ED) end end)
 end
 
-local function limpaResultados()
-    for _, v in ipairs(resultadosScroll:GetChildren()) do
-        if v:IsA("TextButton") then v:Destroy() end
-    end
-    ord = 0
+local function limpaSc() for _,v in ipairs(listaSc:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end; ordSc=0 end
+local function scan(esc,filtro)
+    limpaSc(); local n=0
+    for _,o in ipairs(esc:GetDescendants()) do if not filtro or o:IsA(filtro) then n+=1; if n<=250 then addSc(o.Name,o.ClassName,o:GetFullName(),o) end end end
 end
 
-local function scan(escopo, filtro, label)
-    limpaResultados()
-    local t0 = os.clock(); local count = 0
-    for _, obj in ipairs(escopo:GetDescendants()) do
-        if not filtro or obj:IsA(filtro) then
-            count += 1
-            if count <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
-        end
-    end
-    local dt = math.floor((os.clock() - t0) * 1000)
-    infoLabel.Text = string.format("> %s :: %d objs (%dms)", label, count, dt)
-    logAdd("[SCAN] " .. label .. " -> " .. count, "info")
-end
-
-local scans = {
-    {"▸ WORKSPACE", function() scan(workspace, nil, "Workspace") end, T.Hacker},
-    {"▸ REPLICATED", function() scan(Replicated, nil, "Replicated") end, T.Hacker},
-    {"▸ INVISÍVEIS", function()
-        limpaResultados()
-        local n = 0
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and (obj.Transparency >= 1 or obj.Massless) then
-                n += 1
-                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
-            end
-        end
-        infoLabel.Text = "> Invisíveis: " .. n
-    end, T.Alerta},
-    {"▸ SCRIPTS", function() scan(game, "LuaSourceContainer", "Scripts") end, T.Hacker},
-    {"▸ GUI OCULTA", function()
-        limpaResultados()
-        local n = 0
-        for _, obj in ipairs(game:GetDescendants()) do
-            if obj:IsA("GuiObject") and not obj.Visible then
-                n += 1
-                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
-            end
-        end
-        infoLabel.Text = "> GUI oculta: " .. n
-    end, T.Alerta},
-    {"▸ TOOLS/HRP", function()
-        limpaResultados()
-        local n = 0
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character then
-                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then n += 1; addResult(p.Name, "HRP", hrp:GetFullName(), hrp) end
-                for _, t in ipairs(p.Character:GetChildren()) do
-                    if t:IsA("Tool") then n += 1; addResult(t.Name, "Tool", t:GetFullName(), t) end
-                end
-            end
-        end
-        infoLabel.Text = "> Tools/HRP: " .. n
-    end, T.Hacker},
-    {"▸ SONS/EFEITOS", function()
-        limpaResultados()
-        local n = 0
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Sound") or obj:IsA("ParticleEmitter") or obj:IsA("Beam") then
-                n += 1
-                if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
-            end
-        end
-        infoLabel.Text = "> Sons/efeitos: " .. n
-    end, T.Hacker},
-    {"▸ ITENS", function()
-        limpaResultados()
-        local pads = {"Coin","Gem","Chest","Money","Cash","Drop","Loot","Orb","Crystal","Reward","Item"}
-        local n = 0
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                for _, pat in ipairs(pads) do
-                    if obj.Name:find(pat, 1, true) then
-                        n += 1
-                        if n <= 300 then addResult(obj.Name, obj.ClassName, obj:GetFullName(), obj) end
-                        break
-                    end
-                end
-            end
-        end
-        infoLabel.Text = "> Itens: " .. n
-    end, T.Alerta},
-    {"▸ MODELOS", function() scan(workspace, "Model", "Models") end, T.Hacker},
+local scans={
+    {"WS", function() scan(workspace,nil) end, C.B},
+    {"RS", function() scan(Replicated,nil) end, C.B},
+    {"INVIS", function() limpaSc(); local n=0; for _,o in ipairs(workspace:GetDescendants()) do if o:IsA("BasePart") and (o.Transparency>=1 or o.Massless) then n+=1; if n<=250 then addSc(o.Name,o.ClassName,o:GetFullName(),o) end end end end, C.AL},
+    {"SCRIPTS", function() scan(game,"LuaSourceContainer") end, C.B},
+    {"ITENS", function() limpaSc(); local pats={"Coin","Gem","Chest","Money","Cash","Drop","Loot","Orb","Crystal","Reward","Item"}; local n=0; for _,o in ipairs(workspace:GetDescendants()) do if o:IsA("BasePart") then for _,p in ipairs(pats) do if o.Name:find(p,1,true) then n+=1; if n<=250 then addSc(o.Name,o.ClassName,o:GetFullName(),o) end; break end end end end end, C.AL},
+    {"TOOLS", function() limpaSc(); local n=0; for _,p in ipairs(Players:GetPlayers()) do if p.Character then local h=p.Character:FindFirstChild("HumanoidRootPart"); if h then n+=1; addSc(p.Name,"HRP",h:GetFullName(),h) end; for _,t in ipairs(p.Character:GetChildren()) do if t:IsA("Tool") then n+=1; addSc(t.Name,"Tool",t:GetFullName(),t) end end end end end, C.B},
 }
+for i,e in ipairs(scans) do btn(btnsF,e[1],e[2],e[3]).LayoutOrder=i end
 
-for i, entry in ipairs(scans) do
-    botao(scanBtns, entry[1], entry[2], entry[3]).LayoutOrder = i
-end
+-- EDITOR
+local ed=conts["EDIT"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},ed)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},ed)
 
--- ============================================================
--- ABA: EDITOR
--- ============================================================
-local ed = conteudos["EDITOR"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, ed)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, ed)
-
-local alvoEd = novo("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1,
-    Text = "> Alvo: (nenhum)", TextColor3 = T.Alerta,
-    TextSize = IS_MOBILE and 12 or 11, Font = Enum.Font.Code,
-    TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1,
-    TextTruncate = Enum.TextTruncate.AtEnd,
-}, ed)
-
-local edScroll = terminal(ed, IS_MOBILE and 480 or 540)
-edScroll.LayoutOrder = 2
-
-local edOrdem = 0
-local function edClear()
-    for _, v in ipairs(edScroll:GetChildren()) do
-        if v:IsA("Frame") then v:Destroy() end
-    end
-    edOrdem = 0
-end
-
-local function edPropriedade(nome, valorAtual, tipo)
-    edOrdem += 1
-    local rowH = IS_MOBILE and 44 or 32
-    local row = novo("Frame", {
-        Size = UDim2.new(1, -4, 0, rowH),
-        BackgroundColor3 = T.Painel2, BorderSizePixel = 0,
-        LayoutOrder = edOrdem, ZIndex = 7,
-    }, edScroll)
-    corner(row, 5)
-
-    local lblW = IS_MOBILE and 130 or 140
-    novo("TextLabel", {
-        Size = UDim2.new(0, lblW, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1, Text = nome, TextColor3 = T.Hacker,
-        TextSize = IS_MOBILE and 12 or 11, Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    }, row)
-
-    local input = novo("TextBox", {
-        Size = UDim2.new(1, -(lblW + 16), 1, -8),
-        Position = UDim2.new(0, lblW + 8, 0, 4),
-        BackgroundColor3 = T.Painel, Text = tostring(valorAtual),
-        TextColor3 = T.Texto, TextSize = IS_MOBILE and 13 or 11,
-        Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 8,
-        TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
-    }, row)
-    corner(input, 4); stroke(input, T.BordaDim, 1)
-    novo("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, input)
-
-    input.FocusLost:Connect(function()
-        local v = input.Text
-        local ok, err = pcall(function()
-            if not State.alvo then return end
-            local c
-            if tipo == "number" then c = tonumber(v)
-            elseif tipo == "boolean" then c = (v:lower() == "true" or v == "1")
-            elseif tipo == "color" then
-                local r, g, b = v:match("(%d+)[,%s]+(%d+)[,%s]+(%d+)")
-                if r then c = Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) end
-            elseif tipo == "vector3" then
-                local x, y, z = v:match("([%-%d%.]+)[,%s]+([%-%d%.]+)[,%s]+([%-%d%.]+)")
-                if x then c = Vector3.new(tonumber(x), tonumber(y), tonumber(z)) end
-            else c = v end
-            if c ~= nil then State.alvo[nome] = c end
-            logAdd("[EDIT] " .. nome .. " = " .. tostring(c), "info")
-        end)
-        if not ok then logAdd("[ERRO] " .. tostring(err), "erro") end
+local edScroll=term(ed,IS_MOB and 480 or 440)
+edScroll.LayoutOrder=1
+local edOr=0
+local function edClear() for _,v in ipairs(edScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end; edOr=0 end
+local function edProp(nome,valor,tipo)
+    edOr+=1
+    local rowH=IS_MOB and 38 or 28
+    local row=N("Frame",{Size=UDim2.new(1,-2,0,rowH),BackgroundColor3=C.PAN2,BorderSizePixel=0,LayoutOrder=edOr,ZIndex=7},edScroll)
+    CR(row,4)
+    N("TextLabel",{Size=UDim2.new(0,100,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text=nome,TextColor3=C.B,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,TextTruncate=Enum.TextTruncate.AtEnd},row)
+    local inp=N("TextBox",{Size=UDim2.new(1,-112,1,-6),Position=UDim2.new(0,106,0,3),BackgroundColor3=C.PAN,Text=tostring(valor),TextColor3=C.TX,TextSize=IS_MOB and 12 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=8,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false},row)
+    CR(inp,3); ST(inp,C.BD,1); N("UIPadding",{PaddingLeft=UDim.new(0,6)},inp)
+    inp.FocusLost:Connect(function()
+        if not S.alvo then return end
+        local v=inp.Text; local c
+        if tipo=="number" then c=tonumber(v)
+        elseif tipo=="boolean" then c=(v:lower()=="true" or v=="1")
+        else c=v end
+        if c then pcall(function() S.alvo[nome]=c end) end
     end)
 end
-
-_G.ODD_RefreshEditor = function()
-    if not State.alvo then
-        alvoEd.Text = "> Alvo: (nenhum) — selecione no Scanner"
-        return
-    end
-    alvoEd.Text = "> " .. State.alvo.ClassName .. " :: " .. State.alvo.Name
+_G.ODD_ED=function()
+    if not S.alvo then return end
     edClear()
-    local props = {
-        "Name","Transparency","Reflectance","CanCollide","Anchored","Massless",
-        "Material","Color","Size","Position","Orientation","CFrame","Velocity",
-        "WalkSpeed","JumpPower","Health","MaxHealth","Visible","Enabled",
-        "Brightness","Range","Volume","Playing","Looped","Text","TextColor3",
-        "TextSize","BackgroundColor3","BackgroundTransparency","Image","Value",
-    }
-    for _, p in ipairs(props) do
-        local ok, v = pcall(function() return State.alvo[p] end)
-        if ok and v ~= nil then
-            local tp = type(v)
-            if tp == "number" then edPropriedade(p, v, "number")
-            elseif tp == "boolean" then edPropriedade(p, v, "boolean")
-            elseif tp == "string" then edPropriedade(p, v, "string")
-            elseif tp == "userdata" then
-                local ts = tostring(v)
-                if ts:find("Color3") then edPropriedade(p, ts, "color")
-                elseif ts:find("Vector3") then edPropriedade(p, ts, "vector3") end
-            end
+    for _,p in ipairs({"Name","Transparency","CanCollide","Anchored","WalkSpeed","JumpPower","Health","MaxHealth","Visible","Enabled","Size","Position","Color","Text","Value"}) do
+        local ok,v=pcall(function() return S.alvo[p] end)
+        if ok and v~=nil then
+            local tp=type(v)
+            if tp=="number" then edProp(p,v,"number")
+            elseif tp=="boolean" then edProp(p,v,"boolean")
+            elseif tp=="string" then edProp(p,v,"string") end
         end
     end
 end
 
-botao(ed, "▸ DESTACAR alvo", function()
-    if not State.alvo or not State.alvo:IsA("BasePart") then return end
-    local part = State.alvo; local orig = part.Color
-    part.Color = Color3.fromRGB(255, 0, 0)
-    task.delay(1.5, function() pcall(function() part.Color = orig end) end)
-end, T.Alerta).LayoutOrder = 3
+-- CONSOLE
+local co=conts["CONS"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},co)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},co)
 
-botao(ed, "▸ CLONAR no player", function()
-    if not State.alvo or not LocalPlayer.Character then return end
+local coIn=N("TextBox",{Size=UDim2.new(1,0,0,IS_MOB and 40 or 32),BackgroundColor3=C.PAN,Text="",PlaceholderText="> lua... (OBJ=alvo)",TextColor3=C.B,PlaceholderColor3=C.DM,TextSize=IS_MOB and 13 or 11,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=6,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,LayoutOrder=1},co)
+CR(coIn,4); ST(coIn,C.BD,1); N("UIPadding",{PaddingLeft=UDim.new(0,8)},coIn)
+
+local coLog=term(co,IS_MOB and 440 or 400)
+coLog.LayoutOrder=2
+local coOr=0
+local function coP(t,c)
+    coOr+=1; linha(coLog,t,c or C.TX,coOr)
+    pcall(function() coLog.CanvasPosition=Vector2.new(0,coLog.AbsoluteCanvasSize.Y) end)
+end
+local function exec(codigo)
+    coP("> "..codigo,C.B)
     pcall(function()
-        local clone = State.alvo:Clone()
-        clone.Parent = LocalPlayer.Character
-        if clone:IsA("BasePart") then
-            clone.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
-        end
-        logAdd("[CLONE] " .. clone.Name, "alerta")
+        local env=setmetatable({OBJ=S.alvo,print=function(...) local t={} for i=1,select("#",...) do t[i]=tostring(select(i,...)) end coP(table.concat(t," "),C.B) end},{__index=getfenv()})
+        local fn=loadstring(codigo); if fn then setfenv(fn,env); local r=fn(); if r~=nil then coP("<- "..tostring(r)) end end
     end)
-end, T.Alerta).LayoutOrder = 4
+end
+coIn.FocusLost:Connect(function(e) if e and coIn.Text~="" then exec(coIn.Text); coIn.Text="" end end)
 
--- ============================================================
--- ABA: CONSOLE
--- ============================================================
-local co = conteudos["CONSOLE"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, co)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, co)
+-- INJETOR
+local inj=conts["INJ"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},inj)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},inj)
 
-local entrada = novo("TextBox", {
-    Size = UDim2.new(1, 0, 0, IS_MOBILE and 44 or 32),
-    BackgroundColor3 = T.Painel, Text = "",
-    PlaceholderText = "> lua... (OBJ = alvo)",
-    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim,
-    TextSize = IS_MOBILE and 14 or 12,
-    Font = Enum.Font.Code, BorderSizePixel = 0, ZIndex = 6,
-    TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
-    LayoutOrder = 1,
-}, co)
-corner(entrada, 6); stroke(entrada, T.BordaDim, 1)
-novo("UIPadding", {PaddingLeft = UDim.new(0, 10)}, entrada)
-
-local coScroll = terminal(co, IS_MOBILE and 500 or 560)
-coScroll.LayoutOrder = 2
-
-local coOrdem = 0
-local function coPrint(txt, cor)
-    coOrdem += 1
-    escreve(coScroll, txt, cor or T.Texto, coOrdem)
-    pcall(function() coScroll.CanvasPosition = Vector2.new(0, coScroll.AbsoluteCanvasSize.Y) end)
+local injLog=term(inj,IS_MOB and 400 or 440)
+injLog.LayoutOrder=1
+local injOr=0
+local function injP(t,c)
+    injOr+=1; linha(injLog,t,c or C.TX,injOr)
+    pcall(function() injLog.CanvasPosition=Vector2.new(0,injLog.AbsoluteCanvasSize.Y) end)
 end
 
-local function executa(codigo)
-    coPrint("> " .. codigo, T.Hacker)
-    local ok, err = pcall(function()
-        local env = setmetatable({}, {__index = getfenv()})
-        env.OBJ = State.alvo
-        env.print = function(...)
-            local p = {}
-            for i = 1, select("#", ...) do p[i] = tostring(select(i, ...)) end
-            coPrint(table.concat(p, " "), T.Hacker)
-        end
-        env.warn = function(...) coPrint("WARN: " .. table.concat({...}, " "), T.Alerta) end
-        local fn = loadstring(codigo)
-        if fn then setfenv(fn, env); local r = fn(); if r ~= nil then coPrint("<- " .. tostring(r), T.Texto) end
-        else coPrint("loadstring falhou", T.Erro) end
-    end)
-    if not ok then coPrint("ERRO: " .. tostring(err), T.Erro) end
+local function injetar(esc,label)
+    injP(">>> INJ "..label.." <<<",C.AL)
+    local conns={}
+    local function watch(o)
+        local c1=o.ChildAdded:Connect(function(x) injP("[+] "..o.Name.."/"..x.Name,C.B) end)
+        local c2=o.ChildRemoved:Connect(function(x) injP("[-] "..o.Name.."/"..x.Name,C.ER) end)
+        local c3=o.Changed:Connect(function(p) if p=="Position" or p=="CFrame" then return end; local ok,v=pcall(function() return o[p] end); injP("[~] "..o.Name.."."..p.."="..tostring(ok and v or "?"),C.TX) end)
+        conns[#conns+1]=c1; conns[#conns+1]=c2; conns[#conns+1]=c3
+    end
+    watch(esc)
+    for _,d in ipairs(esc:GetDescendants()) do watch(d) end
+    S.hooks[#S.hooks+1]={nome=label,conns=conns}
+    injP(">>> ATIVO ("..#conns.." hooks) <<<",C.AL)
 end
 
-entrada.FocusLost:Connect(function(enter)
-    if enter and entrada.Text ~= "" then executa(entrada.Text); entrada.Text = "" end
-end)
-
-botao(co, "▸ Dump propriedades", function()
-    if not State.alvo then coPrint("sem alvo", T.Erro); return end
-    coPrint("--- " .. State.alvo.ClassName .. " :: " .. State.alvo.Name .. " ---", T.Alerta)
-    for k, v in pairs(State.alvo) do
-        if type(k) == "string" and type(v) ~= "function" and type(v) ~= "userdata" then
-            coPrint("  " .. k .. " = " .. tostring(v), T.Texto)
-        end
-    end
-end, T.Hacker).LayoutOrder = 3
-
-botao(co, "▸ Listar filhos", function()
-    if not State.alvo then coPrint("sem alvo", T.Erro); return end
-    for _, c in ipairs(State.alvo:GetChildren()) do
-        coPrint("[" .. c.ClassName .. "] " .. c.Name, T.Texto)
-    end
-end, T.Hacker).LayoutOrder = 4
-
-botao(co, "▸ Limpar console", function()
-    for _, v in ipairs(coScroll:GetChildren()) do
-        if v:IsA("TextLabel") then v:Destroy() end
-    end
-    coOrdem = 0
-end, T.Erro).LayoutOrder = 5
-
--- ============================================================
--- ABA: INJETOR
--- ============================================================
-local inj = conteudos["INJETOR"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, inj)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, inj)
-
-local injScroll = terminal(inj, IS_MOBILE and 400 or 560)
-injScroll.LayoutOrder = 1
-
-local injOrdem = 0
-local function injPrint(txt, cor)
-    injOrdem += 1
-    escreve(injScroll, txt, cor or T.Hacker, injOrdem)
-    pcall(function() injScroll.CanvasPosition = Vector2.new(0, injScroll.AbsoluteCanvasSize.Y) end)
-end
-
-local function injetar(escopo, label)
-    injPrint(">>> INJETANDO EM " .. label .. " <<<", T.Alerta)
-    local conns = {}
-    local function watch(obj)
-        local c1 = obj.ChildAdded:Connect(function(ch) injPrint("  [+] " .. obj.Name .. "/" .. ch.Name, T.Hacker) end)
-        local c2 = obj.ChildRemoved:Connect(function(ch) injPrint("  [-] " .. obj.Name .. "/" .. ch.Name, T.Erro) end)
-        local c3 = obj.Changed:Connect(function(prop)
-            if prop == "Position" or prop == "CFrame" or prop == "Orientation" then return end
-            local ok, v = pcall(function() return obj[prop] end)
-            injPrint("  [~] " .. obj.Name .. "." .. prop .. " = " .. tostring(ok and v or "?"), T.Texto)
+btn(inj,"▸ WORKSPACE",function() injetar(workspace,"WS") end,C.B).LayoutOrder=2
+btn(inj,"▸ REPLICATED",function() injetar(Replicated,"RS") end,C.B).LayoutOrder=3
+btn(inj,"▸ ALVO",function() if S.alvo then injetar(S.alvo,S.alvo.Name) else injP("sem alvo",C.ER) end end,C.AL).LayoutOrder=4
+btn(inj,"▸ HOOK __namecall",function()
+    pcall(function()
+        local mt=getrawmetatable(game); local oldNC=mt.__namecall
+        setreadonly(mt,false)
+        mt.__namecall=newcclosure(function(self,...)
+            local m=getnamecallmethod()
+            if m=="FireServer" or m=="InvokeServer" then injP("[NET] "..tostring(self)..":"..m,C.B) end
+            return oldNC(self,...)
         end)
-        conns[#conns+1] = c1; conns[#conns+1] = c2; conns[#conns+1] = c3
-    end
-    watch(escopo)
-    for _, d in ipairs(escopo:GetDescendants()) do watch(d) end
-    State.hooks[#State.hooks+1] = {nome = label, conns = conns}
-    injPrint(">>> ATIVO: " .. label .. " (" .. #conns .. " hooks) <<<", T.Alerta)
-end
-
-botao(inj, "▸ Injetar em WORKSPACE", function() injetar(workspace, "Workspace") end, T.Hacker).LayoutOrder = 2
-botao(inj, "▸ Injetar em REPLICATED", function() injetar(Replicated, "Replicated") end, T.Hacker).LayoutOrder = 3
-botao(inj, "▸ Injetar em CHARACTER", function()
-    if LocalPlayer.Character then injetar(LocalPlayer.Character, "Character") else injPrint("sem char", T.Erro) end
-end, T.Hacker).LayoutOrder = 4
-botao(inj, "▸ Injetar no ALVO", function()
-    if State.alvo then injetar(State.alvo, State.alvo.Name) else injPrint("sem alvo", T.Erro) end
-end, T.Alerta).LayoutOrder = 5
-
-botao(inj, "▸ HOOK __namecall GLOBAL", function()
-    injPrint(">>> Hookando __namecall <<<", T.Alerta)
-    local ok, err = pcall(function()
-        local mt = getrawmetatable and getrawmetatable(game)
-        if not mt then error("sem getrawmetatable") end
-        local oldNC = mt.__namecall
-        setreadonly(mt, false)
-        mt.__namecall = newcclosure(function(self, ...)
-            local metodo = getnamecallmethod()
-            if metodo == "FireServer" or metodo == "InvokeServer" then
-                injPrint("  [OUT] " .. tostring(self) .. ":" .. metodo, T.Hacker)
-            end
-            return oldNC(self, ...)
-        end)
-        setreadonly(mt, true)
-        injPrint(">>> HOOK ATIVO <<<", T.Hacker)
+        setreadonly(mt,true)
+        injP("[OK] hook",C.B)
     end)
-    if not ok then injPrint("ERRO: " .. tostring(err), T.Erro) end
-end, T.Alerta).LayoutOrder = 6
+end,C.AL).LayoutOrder=5
+btn(inj,"▸ MATAR hooks",function() for _,h in ipairs(S.hooks) do for _,c in ipairs(h.conns) do pcall(function() c:Disconnect() end) end end; S.hooks={}; injP("[KILL]",C.ER) end,C.ER).LayoutOrder=6
 
-botao(inj, "▸ MATAR todos os hooks", function()
-    for _, h in ipairs(State.hooks) do
-        for _, c in ipairs(h.conns) do pcall(function() c:Disconnect() end) end
-    end
-    State.hooks = {}
-    injPrint(">>> HOOKS DESTRUÍDOS <<<", T.Erro)
-end, T.Erro).LayoutOrder = 7
+-- REMOTES
+local rm=conts["REM"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},rm)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},rm)
 
--- ============================================================
--- ABA: REMOTES
--- ============================================================
-local rm = conteudos["REMOTES"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, rm)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, rm)
+local remLog=term(rm,IS_MOB and 440 or 500)
+remLog.LayoutOrder=1
+local remOr=0
+local function remClear() for _,v in ipairs(remLog:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end; remOr=0 end
 
-local remScroll = terminal(rm, IS_MOBILE and 460 or 560)
-remScroll.LayoutOrder = 1
-
-local remOrdem = 0
-local function remClear()
-    for _, v in ipairs(remScroll:GetChildren()) do
-        if v:IsA("TextButton") then v:Destroy() end
-    end
-    remOrdem = 0
-end
-
-botao(rm, "▸ Escanear TODOS os remotes", function()
-    remClear()
-    local n = 0
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
-            n += 1
-            remOrdem += 1
-            local b = novo("TextButton", {
-                Size = UDim2.new(1, -4, 0, IS_MOBILE and 32 or 24),
-                BackgroundColor3 = T.Painel2, Text = "", BorderSizePixel = 0,
-                ZIndex = 7, LayoutOrder = remOrdem,
-            }, remScroll)
-            corner(b, 4)
-            novo("TextLabel", {
-                Size = UDim2.new(0, 80, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-                BackgroundTransparency = 1, Text = obj.ClassName:gsub("Remote", ""),
-                TextColor3 = T.Hacker, TextSize = IS_MOBILE and 11 or 10,
-                Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
-            }, b)
-            novo("TextLabel", {
-                Size = UDim2.new(1, -90, 1, 0), Position = UDim2.new(0, 90, 0, 0),
-                BackgroundTransparency = 1, Text = obj:GetFullName(),
-                TextColor3 = T.Texto, TextSize = IS_MOBILE and 12 or 10,
-                Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 8,
-            }, b)
-            b.MouseButton1Click:Connect(function()
-                State.alvo = obj
-                if _G.ODD_RefreshEditor then _G.ODD_RefreshEditor() end
-                mostrarAba("CONSOLE")
-                entrada.Text = 'OBJ:FireServer()'
-            end)
+btn(rm,"▸ ESCANEAR",function()
+    remClear(); local n=0
+    for _,o in ipairs(game:GetDescendants()) do
+        if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") or o:IsA("UnreliableRemoteEvent") then
+            n+=1; remOr+=1
+            local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=remOr},remLog)
+            CR(b,3)
+            N("TextLabel",{Size=UDim2.new(0,60,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text=o.ClassName:gsub("Remote",""),TextColor3=C.B,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8},b)
+            N("TextLabel",{Size=UDim2.new(1,-70,1,0),Position=UDim2.new(0,70,0,0),BackgroundTransparency=1,Text=o:GetFullName(),TextColor3=C.TX,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=8},b)
+            b.MouseButton1Click:Connect(function() S.alvo=o; mostrar("CONS"); coIn.Text='OBJ:FireServer()' end)
         end
     end
-    logAdd("[REMOTES] " .. n .. " encontrados", "alerta")
-end, T.Hacker).LayoutOrder = 2
-
-botao(rm, "▸ FIRAR alvo", function()
-    local a = State.alvo
-    if not a then logAdd("sem alvo", "erro"); return end
+end,C.B).LayoutOrder=2
+btn(rm,"▸ FIRAR",function()
+    local a=S.alvo; if not a then return end
+    if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then pcall(function() a:FireServer() end)
+    elseif a:IsA("RemoteFunction") then pcall(function() a:InvokeServer() end) end
+end,C.AL).LayoutOrder=3
+btn(rm,"▸ OBSERVAR",function()
+    local a=S.alvo; if not a then return end
     if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
-        pcall(function() a:FireServer() end); logAdd("[FIRE] " .. a:GetFullName(), "info")
-    elseif a:IsA("RemoteFunction") then
-        local ok, r = pcall(function() return a:InvokeServer() end)
-        logAdd("[INVOKE] " .. tostring(ok and r or "erro"), "info")
+        a.OnClientEvent:Connect(function(...) local t={} for i=1,select("#",...) do t[i]=tostring(select(i,...)) end coP("[RECV] "..a.Name.."("..table.concat(t,",")..")",C.AL) end)
     end
-end, T.Alerta).LayoutOrder = 3
+end,C.AL).LayoutOrder=4
 
-botao(rm, "▸ OBSERVAR alvo", function()
-    local a = State.alvo
-    if not a then logAdd("sem alvo", "erro"); return end
-    if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
-        a.OnClientEvent:Connect(function(...)
-            local args = {}
-            for i = 1, select("#", ...) do args[i] = tostring(select(i, ...)) end
-            logAdd("[RECV] " .. a.Name .. "(" .. table.concat(args, ", ") .. ")", "alerta")
-        end)
-    end
-end, T.Alerta).LayoutOrder = 4
+-- BYPASS
+local bp=conts["BYP"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},bp)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},bp)
 
--- ============================================================
--- ABA: BYPASS
--- ============================================================
-local bp = conteudos["BYPASS"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, bp)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, bp)
+local bpLog=term(bp,IS_MOB and 440 or 500)
+bpLog.LayoutOrder=1
+local bpOr=0
+local function bpP(t,c) bpOr+=1; linha(bpLog,t,c or C.TX,bpOr); pcall(function() bpLog.CanvasPosition=Vector2.new(0,bpLog.AbsoluteCanvasSize.Y) end) end
 
-novo("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1,
-    Text = "> Bypass client-side. Não fura Byfron server-side.",
-    TextColor3 = T.Alerta, TextSize = IS_MOBILE and 12 or 11,
-    Font = Enum.Font.Code, TextXAlignment = Enum.TextXAlignment.Left,
-    LayoutOrder = 1, TextWrapped = true,
-}, bp)
+btn(bp,"▸ ATIVAR bypass",function()
+    pcall(function()
+        if setthreadidentity then setthreadidentity(8); bpP("[OK] identity 8",C.B) end
+        for _,f in ipairs({"checkcaller","islclosure"}) do if _G[f] then _G[f]=function() return true end end end
+        for _,f in ipairs({"getidentity","getthreadidentity"}) do if _G[f] then _G[f]=function() return 8 end end end
+        bpP("[OK] bypass",C.B)
+    end)
+end,C.ER).LayoutOrder=2
+btn(bp,"▸ Anti-kick",function() pcall(function() LP.Kick=function() end; LP.ClearAllChildren=function() end; bpP("[OK] kick off",C.B) end) end,C.ER).LayoutOrder=3
+btn(bp,"▸ Testar",function()
+    bpP("checkcaller: "..tostring(checkcaller and checkcaller() or "?"),C.B)
+    bpP("getidentity: "..tostring(getidentity and getidentity() or "?"),C.B)
+    bpP("executor: "..tostring(identifyexecutor and identifyexecutor() or "?"),C.B)
+end,C.AL).LayoutOrder=4
 
-local bpScroll = terminal(bp, IS_MOBILE and 380 or 500)
-bpScroll.LayoutOrder = 2
+-- DUMP
+local dp=conts["DUMP"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},dp)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},dp)
 
-local bpOrdem = 0
-local function bpPrint(txt, cor)
-    bpOrdem += 1
-    escreve(bpScroll, txt, cor or T.Hacker, bpOrdem)
-    pcall(function() bpScroll.CanvasPosition = Vector2.new(0, bpScroll.AbsoluteCanvasSize.Y) end)
+local dpLog=term(dp,IS_MOB and 440 or 500)
+dpLog.LayoutOrder=1
+local dpOr=0
+local function dpP(t,c) dpOr+=1; linha(dpLog,t,c or C.TX,dpOr); pcall(function() dpLog.CanvasPosition=Vector2.new(0,dpLog.AbsoluteCanvasSize.Y) end) end
+
+btn(dp,"▸ Dump WS → arquivo",function()
+    pcall(function()
+        local function ser(o,d,md) d=d or 0; md=md or 3; if d>md then return {c=o.ClassName,n=o.Name} end; local r={c=o.ClassName,n=o.Name}; local f={}; for _,x in ipairs(o:GetChildren()) do f[#f+1]=ser(x,d+1,md) end; if #f>0 then r.children=f end; return r end
+        local j=HttpService:JSONEncode(ser(workspace,0,3))
+        if writefile then writefile("odd_ws.json",j); dpP("[OK] "..#j.."b",C.B) end
+    end)
+end,C.B).LayoutOrder=2
+btn(dp,"▸ Dump RS → arquivo",function()
+    pcall(function()
+        local function ser(o,d,md) d=d or 0; md=md or 4; if d>md then return {c=o.ClassName,n=o.Name} end; local r={c=o.ClassName,n=o.Name}; local f={}; for _,x in ipairs(o:GetChildren()) do f[#f+1]=ser(x,d+1,md) end; if #f>0 then r.children=f end; return r end
+        local j=HttpService:JSONEncode(ser(Replicated,0,4))
+        if writefile then writefile("odd_rs.json",j); dpP("[OK] "..#j.."b",C.B) end
+    end)
+end,C.B).LayoutOrder=3
+btn(dp,"▸ Ambiente",function()
+    dpP("executor: "..tostring(identifyexecutor and identifyexecutor() or "?"),C.B)
+    dpP("getrawmetatable: "..tostring(getrawmetatable~=nil),C.B)
+    dpP("writefile: "..tostring(writefile~=nil),C.B)
+    dpP("setclipboard: "..tostring(setclipboard~=nil),C.B)
+end,C.AL).LayoutOrder=4
+
+-- TELEPORT
+local tp=conts["TP"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},tp)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},tp)
+
+local tpLog=term(tp,IS_MOB and 280 or 320)
+tpLog.LayoutOrder=1
+local tpOr=0
+local function tpP(t,c) tpOr+=1; linha(tpLog,t,c or C.TX,tpOr); pcall(function() tpLog.CanvasPosition=Vector2.new(0,tpLog.AbsoluteCanvasSize.Y) end) end
+
+local function tpTo(cf,label)
+    local ok=pcall(function() local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart"); if h then h.CFrame=cf end end)
+    if ok then tpP("[TP] "..(label or "ok"),C.B) end
 end
 
-local function bypassAtivar()
-    State.bypassOn = true
-    bpPrint(">>> ATIVANDO CAMADAS <<<", T.Alerta)
+btn(tp,"▸ TP → ALVO",function()
+    if not S.alvo then return end
+    local pos=S.alvo.Position or (S.alvo.CFrame and S.alvo.CFrame.Position)
+    if pos then tpTo(CFrame.new(pos+Vector3.new(0,4,0)),S.alvo.Name) end
+end,C.AL).LayoutOrder=2
+btn(tp,"▸ TP → CHÃO",function() tpTo(CFrame.new(0,10,0),"origem") end,C.B).LayoutOrder=3
+btn(tp,"▸ SALVAR posição",function()
+    local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if h then _G.SAVED=h.CFrame; tpP("[SAVE] ok",C.B) end
+end,C.B).LayoutOrder=4
+btn(tp,"▸ VOLTAR posição",function() if _G.SAVED then tpTo(_G.SAVED,"salva") end end,C.B).LayoutOrder=5
+btn(tp,"▸ DUP → Backpack",function()
+    if not S.alvo or not S.alvo:IsA("Tool") then return end
+    pcall(function() local b=LP:FindFirstChild("Backpack"); if b then local c=S.alvo:Clone(); c.Parent=b; tpP("[DUP] "..c.Name,C.B) end end)
+end,C.AL).LayoutOrder=6
 
-    pcall(function()
-        if hookfunction and getrawmetatable then
-            local gm = getrawmetatable(game)
-            local oldIdx = gm.__index
-            setreadonly(gm, false)
-            gm.__index = newcclosure(function(t, k) return oldIdx(t, k) end)
-            setreadonly(gm, true)
-            bpPrint("[OK] metatable blindada", T.Hacker)
-        end
-    end)
+-- MONITOR
+local mn=conts["MON"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},mn)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},mn)
 
-    pcall(function()
-        local mt = getrawmetatable(game)
-        local oldNC = mt.__namecall
-        if not oldNC then return end
-        setreadonly(mt, false)
-        mt.__namecall = newcclosure(function(self, ...)
-            local metodo = getnamecallmethod()
-            if metodo == "Kick" then
-                local s = tostring(self)
-                if s:find("AntiCheat") or s:find("Byfron") then
-                    bpPrint("[BLOCK] " .. s .. ":Kick", T.Perigo); return
-                end
-            end
-            return oldNC(self, ...)
-        end)
-        setreadonly(mt, true)
-        bpPrint("[OK] namecall filtrado", T.Hacker)
-    end)
+local mnLog=term(mn,IS_MOB and 320 or 360)
+mnLog.LayoutOrder=1
+local mnOr=0
+local function mnP(t,c) mnOr+=1; linha(mnLog,t,c or C.TX,mnOr); pcall(function() mnLog.CanvasPosition=Vector2.new(0,mnLog.AbsoluteCanvasSize.Y) end) end
 
-    pcall(function()
-        if setthreadidentity then setthreadidentity(8)
-            bpPrint("[OK] thread identity = 8", T.Hacker) end
-    end)
+local Mon={ativo=false,conn=nil,ultimo={},prop="Transparency",val="0",autoTP=false}
 
-    pcall(function()
-        for _, f in ipairs({"getidentity","getthreadidentity","checkcaller","islclosure"}) do
-            if _G[f] then
-                local orig = _G[f]
-                _G[f] = function(...)
-                    if f == "checkcaller" or f == "islclosure" then return true end
-                    if f == "getidentity" or f == "getthreadidentity" then return 8 end
-                    return orig(...)
+btn(mn,"▸ INICIAR monitor",function()
+    if not S.alvo then return end
+    if Mon.ativo then return end
+    Mon.ativo=true; Mon.ultimo={}
+    Mon.conn=RunService.Heartbeat:Connect(function()
+        if not Mon.ativo or not S.alvo then return end
+        local ok,v=pcall(function() return S.alvo[Mon.prop] end)
+        if not ok then return end
+        if Mon.ultimo[S.alvo]~=v then
+            Mon.ultimo[S.alvo]=v
+            mnP("[~] "..Mon.prop.."="..tostring(v),C.TX)
+            if tostring(v)==Mon.val then
+                mnP(">>> GATILHO <<<",C.AL)
+                if Mon.autoTP then
+                    local pos=S.alvo.Position or (S.alvo.CFrame and S.alvo.CFrame.Position)
+                    if pos then tpTo(CFrame.new(pos+Vector3.new(0,4,0)),S.alvo.Name) end
                 end
             end
         end
-        bpPrint("[OK] funções falsificadas", T.Hacker)
     end)
+    mnP(">>> ATIVO <<<",C.AL)
+end,C.B).LayoutOrder=2
+btn(mn,"▸ PARAR",function() Mon.ativo=false; if Mon.conn then Mon.conn:Disconnect(); Mon.conn=nil end; mnP(">>> OFF <<<",C.ER) end,C.ER).LayoutOrder=3
+btn(mn,"▸ AUTO-TP on/off",function() Mon.autoTP=not Mon.autoTP; mnP("auto-TP="..tostring(Mon.autoTP),C.AL) end,C.AL).LayoutOrder=4
 
-    bpPrint(">>> BYPASS ATIVO <<<", T.Alerta)
-    statusHdr.Text = "● BYPASS"
-    statusHdr.TextColor3 = T.Alerta
-end
+-- abrir/fechar
+abrir.MouseButton1Click:Connect(function() painel.Visible=true; abrir.Visible=false end)
+fechar.MouseButton1Click:Connect(function() painel.Visible=false; abrir.Visible=true end)
 
-botao(bp, "▸ ATIVAR bypass", bypassAtivar, T.Perigo).LayoutOrder = 3
-botao(bp, "▸ DESATIVAR bypass", function()
-    State.bypassOn = false
-    bpPrint(">>> BYPASS OFF <<<", T.Erro)
-    statusHdr.Text = "● ONLINE"; statusHdr.TextColor3 = T.Hacker
-end, T.Erro).LayoutOrder = 4
-
-botao(bp, "▸ Testar detecção", function()
-    bpPrint("checkcaller: " .. tostring(checkcaller and checkcaller() or "N/A"), T.Hacker)
-    bpPrint("getidentity: " .. tostring(getidentity and getidentity() or "N/A"), T.Hacker)
-    bpPrint("executor: " .. tostring(identifyexecutor and identifyexecutor() or "N/A"), T.Hacker)
-end, T.Alerta).LayoutOrder = 5
-
-botao(bp, "▸ Anti-kick local", function()
-    pcall(function()
-        LocalPlayer.ClearAllChildren = function() end
-        LocalPlayer.Kick = function() end
-        bpPrint("[OK] Kick bloqueado", T.Hacker)
-    end)
-end, T.Perigo).LayoutOrder = 6
-
--- ============================================================
--- ABA: DUMP
--- ============================================================
-local dp = conteudos["DUMP"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, dp)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, dp)
-
-local dpScroll = terminal(dp, IS_MOBILE and 460 or 560)
-dpScroll.LayoutOrder = 1
-
-local dpOrdem = 0
-local function dpPrint(txt, cor)
-    dpOrdem += 1
-    escreve(dpScroll, txt, cor or T.Hacker, dpOrdem)
-    pcall(function() dpScroll.CanvasPosition = Vector2.new(0, dpScroll.AbsoluteCanvasSize.Y) end)
-end
-
-local function serializa(obj, prof, maxD)
-    prof = prof or 0; maxD = maxD or 4
-    if prof > maxD then return {class = obj.ClassName, name = obj.Name} end
-    local d = {class = obj.ClassName, name = obj.Name, path = obj:GetFullName()}
-    local filhos = {}
-    for _, c in ipairs(obj:GetChildren()) do filhos[#filhos+1] = serializa(c, prof + 1, maxD) end
-    if #filhos > 0 then d.children = filhos end
-    return d
-end
-
-botao(dp, "▸ Dump WORKSPACE → arquivo", function()
-    pcall(function()
-        dpPrint(">>> Gerando JSON... <<<", T.Alerta)
-        local json = HttpService:JSONEncode(serializa(workspace, 0, 4))
-        if writefile then writefile("odd_workspace_dump.json", json)
-            dpPrint("[OK] " .. #json .. " bytes", T.Hacker)
-        else dpPrint("[SEM writefile] " .. #json .. " bytes", T.Alerta) end
-    end)
-end, T.Hacker).LayoutOrder = 2
-
-botao(dp, "▸ Dump REPLICATED → arquivo", function()
-    pcall(function()
-        local json = HttpService:JSONEncode(serializa(Replicated, 0, 5))
-        if writefile then writefile("odd_replicated_dump.json", json)
-            dpPrint("[OK] " .. #json .. " bytes", T.Hacker)
-        else dpPrint("[SEM writefile] " .. #json .. " bytes", T.Alerta) end
-    end)
-end, T.Hacker).LayoutOrder = 3
-
-botao(dp, "▸ Listar ambiente", function()
-    dpPrint("identifyexecutor: " .. tostring(identifyexecutor and identifyexecutor() or "N/A"), T.Hacker)
-    dpPrint("gethui: " .. tostring(gethui ~= nil), T.Hacker)
-    dpPrint("getrawmetatable: " .. tostring(getrawmetatable ~= nil), T.Hacker)
-    dpPrint("hookfunction: " .. tostring(hookfunction ~= nil), T.Hacker)
-    dpPrint("writefile: " .. tostring(writefile ~= nil), T.Hacker)
-    dpPrint("setclipboard: " .. tostring(setclipboard ~= nil), T.Hacker)
-end, T.Hacker).LayoutOrder = 4
-
--- ============================================================
--- ABA: TELEPORT
--- ============================================================
-local tp = conteudos["TELEPORT"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, tp)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, tp)
-
-local tpScroll = terminal(tp, IS_MOBILE and 340 or 440)
-tpScroll.LayoutOrder = 1
-
-local tpOrdem = 0
-local function tpPrint(txt, cor)
-    tpOrdem += 1
-    escreve(tpScroll, txt, cor or T.Hacker, tpOrdem)
-    pcall(function() tpScroll.CanvasPosition = Vector2.new(0, tpScroll.AbsoluteCanvasSize.Y) end)
-end
-
-local function teleportar(cframe, label)
-    local ok, err = pcall(function()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then error("sem HRP") end
-        hrp.CFrame = cframe
-        tpPrint("[TP] " .. (label or "destino"), T.Hacker)
-    end)
-    if not ok then tpPrint("[ERRO] " .. tostring(err), T.Erro) end
-end
-
-local function teleportarSuave(cframe, label)
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then tpPrint("[ERRO] sem HRP", T.Erro); return end
-    local startCF = hrp.CFrame
-    local conn, t = nil, 0
-    conn = RunService.Heartbeat:Connect(function(dt)
-        t += dt * 2
-        if t >= 1 then t = 1; conn:Disconnect() end
-        pcall(function() hrp.CFrame = startCF:Lerp(cframe, t) end)
-    end)
-    tpPrint("[TP-SUAVE] " .. (label or "destino"), T.Hacker)
-end
-
-_G.ODD_Teleportar = teleportar
-
-botao(tp, "▸ TP para ALVO", function()
-    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
-    pcall(function()
-        local pos = State.alvo.Position or (State.alvo.CFrame and State.alvo.CFrame.Position)
-        if pos then teleportar(CFrame.new(pos + Vector3.new(0, 4, 0)), State.alvo.Name) end
-    end)
-end, T.Alerta).LayoutOrder = 2
-
-botao(tp, "▸ TP SUAVE para ALVO", function()
-    if not State.alvo then tpPrint("sem alvo", T.Erro); return end
-    pcall(function()
-        local pos = State.alvo.Position or (State.alvo.CFrame and State.alvo.CFrame.Position)
-        if pos then teleportarSuave(CFrame.new(pos + Vector3.new(0, 4, 0)), State.alvo.Name) end
-    end)
-end, T.Alerta).LayoutOrder = 3
-
-botao(tp, "▸ TP para CHÃO", function() teleportar(CFrame.new(0, 10, 0), "origem") end, T.Hacker).LayoutOrder = 4
-
-botao(tp, "▸ Salvar posição", function()
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then tpPrint("sem HRP", T.Erro); return end
-    _G.ODD_SavedPos = hrp.CFrame
-    tpPrint("[SAVE] ok", T.Hacker)
-end, T.Hacker).LayoutOrder = 5
-
-botao(tp, "▸ Voltar posição salva", function()
-    if _G.ODD_SavedPos then teleportar(_G.ODD_SavedPos, "salva")
-    else tpPrint("nada salvo", T.Erro) end
-end, T.Hacker).LayoutOrder = 6
-
-botao(tp, "▸ DUPLICAR Tool → Backpack", function()
-    if not State.alvo or not State.alvo:IsA("Tool") then tpPrint("alvo não é Tool", T.Erro); return end
-    pcall(function()
-        local bp = LocalPlayer:FindFirstChild("Backpack")
-        if bp then
-            local c = State.alvo:Clone(); c.Parent = bp
-            tpPrint("[DUP] " .. c.Name, T.Hacker)
-        end
-    end)
-end, T.Alerta).LayoutOrder = 7
-
--- ============================================================
--- ABA: MONITOR
--- ============================================================
-local mn = conteudos["MONITOR"]
-novo("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, mn)
-novo("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, mn)
-
-local monScroll = terminal(mn, IS_MOBILE and 280 or 400)
-monScroll.LayoutOrder = 1
-
-local monOrdem = 0
-local function monPrint(txt, cor)
-    monOrdem += 1
-    escreve(monScroll, txt, cor or T.Hacker, monOrdem)
-    pcall(function() monScroll.CanvasPosition = Vector2.new(0, monScroll.AbsoluteCanvasSize.Y) end)
-end
-
-local Monitor = {
-    ativo = false, conn = nil, ultimo = {},
-    gatilhoProp = "Transparency", gatilhoValor = "0",
-    autoTP = false, autoExec = "",
-}
-
-local function monitorLoop()
-    if not Monitor.ativo or not State.alvo then return end
-    local a = State.alvo
-    local ok, valor = pcall(function() return a[Monitor.gatilhoProp] end)
-    if not ok then return end
-    if Monitor.ultimo[a] ~= valor then
-        Monitor.ultimo[a] = valor
-        monPrint("[~] " .. a.Name .. "." .. Monitor.gatilhoProp .. " = " .. tostring(valor), T.Texto)
-        if tostring(valor) == tostring(Monitor.gatilhoValor) then
-            monPrint(">>> GATILHO! <<<", T.Alerta)
-            if Monitor.autoTP and _G.ODD_Teleportar then
-                local pos = a.Position or (a.CFrame and a.CFrame.Position)
-                if pos then _G.ODD_Teleportar(CFrame.new(pos + Vector3.new(0, 4, 0)), a.Name) end
-            end
-        end
-    end
-end
-
-botao(mn, "▸ INICIAR monitor", function()
-    if not State.alvo then monPrint("sem alvo", T.Erro); return end
-    if Monitor.ativo then return end
-    Monitor.ativo = true; Monitor.ultimo = {}
-    Monitor.conn = RunService.Heartbeat:Connect(monitorLoop)
-    monPrint(">>> ATIVO <<<", T.Alerta)
-end, T.Hacker).LayoutOrder = 2
-
-botao(mn, "▸ PARAR monitor", function()
-    Monitor.ativo = false
-    if Monitor.conn then Monitor.conn:Disconnect(); Monitor.conn = nil end
-    monPrint(">>> PARADO <<<", T.Erro)
-end, T.Erro).LayoutOrder = 3
-
-local propInput = novo("TextBox", {
-    Size = UDim2.new(1, 0, 0, IS_MOBILE and 44 or 32),
-    BackgroundColor3 = T.Painel, Text = "Transparency",
-    PlaceholderText = "propriedade",
-    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim,
-    TextSize = IS_MOBILE and 14 or 11, Font = Enum.Font.Code,
-    BorderSizePixel = 0, ZIndex = 6, TextXAlignment = Enum.TextXAlignment.Left,
-    ClearTextOnFocus = false, LayoutOrder = 4,
-}, mn)
-corner(propInput, 6); stroke(propInput, T.BordaDim, 1)
-novo("UIPadding", {PaddingLeft = UDim.new(0, 10)}, propInput)
-propInput.FocusLost:Connect(function()
-    Monitor.gatilhoProp = propInput.Text
-    monPrint("[CFG] prop = " .. propInput.Text, T.Hacker)
-end)
-
-local valInput = novo("TextBox", {
-    Size = UDim2.new(1, 0, 0, IS_MOBILE and 44 or 32),
-    BackgroundColor3 = T.Painel, Text = "0",
-    PlaceholderText = "valor gatilho",
-    TextColor3 = T.Hacker, PlaceholderColor3 = T.Dim,
-    TextSize = IS_MOBILE and 14 or 11, Font = Enum.Font.Code,
-    BorderSizePixel = 0, ZIndex = 6, TextXAlignment = Enum.TextXAlignment.Left,
-    ClearTextOnFocus = false, LayoutOrder = 5,
-}, mn)
-corner(valInput, 6); stroke(valInput, T.BordaDim, 1)
-novo("UIPadding", {PaddingLeft = UDim.new(0, 10)}, valInput)
-valInput.FocusLost:Connect(function()
-    Monitor.gatilhoValor = valInput.Text
-    monPrint("[CFG] gatilho = " .. valInput.Text, T.Hacker)
-end)
-
-botao(mn, "▸ Alternar AUTO-TP", function()
-    Monitor.autoTP = not Monitor.autoTP
-    monPrint("[CFG] auto-TP = " .. tostring(Monitor.autoTP), T.Hacker)
-end, T.Hacker).LayoutOrder = 6
-
-botao(mn, "▸ MONITORAR jogo inteiro", function()
-    local c = workspace.DescendantAdded:Connect(function(obj)
-        monPrint("[+] " .. obj.ClassName .. " :: " .. obj.Name, T.Hacker)
-    end)
-    State.hooks[#State.hooks+1] = {nome = "DescendantAdded", conns = {c}}
-    monPrint("[OK] hook instalado", T.Hacker)
-end, T.Alerta).LayoutOrder = 7
-
--- ============================================================
--- ABRIR / FECHAR
--- ============================================================
-btnAbrir.MouseButton1Click:Connect(function()
-    painel.Visible = true
-    btnAbrir.Visible = false
-    mostrarAba("SCANNER")
-end)
-btnFechar.MouseButton1Click:Connect(function()
-    painel.Visible = false
-    btnAbrir.Visible = true
-end)
-
-mostrarAba("SCANNER")
-
-logAdd("[BOOT] v6.0 MOBILE iniciado", "info")
-print("[OLHO DE DEUS v6.0] Mobile UI carregada. IS_MOBILE=" .. tostring(IS_MOBILE))
+mostrar("SCAN")
+print("[OLHO DE DEUS v7.1] ok")
