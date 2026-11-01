@@ -1,4 +1,4 @@
---[[ OLHO DE DEUS v8.0 — HARDENED ]]
+--[[ OLHO DE DEUS v8.1 — HARDENED (fix tap mobile) ]]
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
@@ -37,8 +37,8 @@ end
 
 local gui = N("ScreenGui",{Name="OlhoDeDeus",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},P)
 
-local abrir = N("TextButton",{Size=UDim2.new(0,54,0,54),Position=UDim2.new(1,-72,0,72),BackgroundColor3=C.PAN,Text="◉",TextColor3=C.B,TextSize=24,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=10},gui)
-CR(abrir,27); ST(abrir,C.B,2); DRAG(abrir)
+local abrir = N("TextButton",{Size=UDim2.new(0,54,0,54),Position=UDim2.new(1,-72,0,72),BackgroundColor3=C.PAN,Text="◉",TextColor3=C.B,TextSize=24,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=10,Active=true,Selectable=true},gui)
+CR(abrir,27); ST(abrir,C.B,2)
 
 local painel = N("Frame",{Size=UDim2.new(1,-16,1,-130),Position=UDim2.new(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),BackgroundColor3=C.BG,BorderSizePixel=0,ZIndex=5,Visible=false},gui)
 CR(painel,8); ST(painel,C.B,2)
@@ -47,7 +47,7 @@ local hd = N("Frame",{Size=UDim2.new(1,0,0,46),BackgroundColor3=C.PAN,BorderSize
 CR(hd,8)
 N("Frame",{Size=UDim2.new(1,0,0,8),Position=UDim2.new(0,0,1,-8),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},hd)
 N("TextLabel",{Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,14,0,0),BackgroundTransparency=1,Text="◉ OLHO DE DEUS v8",TextColor3=C.B,TextSize=IS_MOB and 15 or 14,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7},hd)
-local fechar=N("TextButton",{Size=UDim2.new(0,34,0,34),Position=UDim2.new(1,-42,0.5,-17),BackgroundColor3=C.ER,Text="X",TextColor3=Color3.new(1,1,1),TextSize=16,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7},hd)
+local fechar=N("TextButton",{Size=UDim2.new(0,34,0,34),Position=UDim2.new(1,-42,0.5,-17),BackgroundColor3=C.ER,Text="X",TextColor3=Color3.new(1,1,1),TextSize=16,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,Active=true},hd)
 CR(fechar,6); DRAG(painel,hd)
 
 local bw = N("Frame",{Size=UDim2.new(1,-16,0,44),Position=UDim2.new(0,8,0,54),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},painel)
@@ -69,7 +69,7 @@ local function mostrar(nome)
 end
 
 for i,nome in ipairs(abasNomes) do
-    local b=N("TextButton",{Size=UDim2.new(0,IS_MOB and 66 or 58,1,0),BackgroundColor3=C.BG,Text=nome,TextColor3=C.DM,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,LayoutOrder=i},bar)
+    local b=N("TextButton",{Size=UDim2.new(0,IS_MOB and 66 or 58,1,0),BackgroundColor3=C.BG,Text=nome,TextColor3=C.DM,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,LayoutOrder=i,Active=true},bar)
     CR(b,4)
     abas[nome]=b
     local f=N("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false,ZIndex=6},cont)
@@ -78,7 +78,7 @@ for i,nome in ipairs(abasNomes) do
 end
 
 local function btn(pai,txt,cb,cor)
-    local b=N("TextButton",{Size=UDim2.new(1,0,0,IS_MOB and 40 or 30),BackgroundColor3=C.PAN,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 12 or 11,Font=Enum.Font.Code,BorderSizePixel=0,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=6},pai)
+    local b=N("TextButton",{Size=UDim2.new(1,0,0,IS_MOB and 40 or 30),BackgroundColor3=C.PAN,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 12 or 11,Font=Enum.Font.Code,BorderSizePixel=0,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=6,Active=true},pai)
     N("UIPadding",{PaddingLeft=UDim.new(0,10)},b); CR(b,4); ST(b,C.BD,1)
     b.MouseButton1Click:Connect(cb)
     return b
@@ -96,7 +96,6 @@ local function linha(s,txt,cor,ord)
     N("TextLabel",{Size=UDim2.new(1,0,0,IS_MOB and 16 or 14),BackgroundTransparency=1,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,LayoutOrder=ord or 0,TextTruncate=Enum.TextTruncate.AtEnd},s)
 end
 
--- console global (compartilhado pra todos logs)
 local coGlobal
 local coOrG = 0
 local function glog(t,c)
@@ -104,6 +103,68 @@ local function glog(t,c)
     coOrG+=1; linha(coGlobal,t,c or C.TX,coOrG)
     pcall(function() coGlobal.CanvasPosition=Vector2.new(0,coGlobal.AbsoluteCanvasSize.Y) end)
 end
+
+-- ============================================================
+-- TAP DETECTION CUSTOM (fix mobile)
+-- ============================================================
+local function configurarTapBotao(botao, callback)
+    local tapInicio = 0
+    local tapPos = nil
+    local moveuTap = false
+    local chamado = false
+
+    botao.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+            tapInicio = tick()
+            tapPos = i.Position
+            moveuTap = false
+            chamado = false
+        end
+    end)
+
+    botao.InputChanged:Connect(function(i)
+        if tapPos and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then
+            local d = i.Position - tapPos
+            if d.Magnitude > 10 then
+                moveuTap = true
+                botao.Position = UDim2.new(botao.Position.X.Scale, botao.Position.X.Offset + d.X, botao.Position.Y.Scale, botao.Position.Y.Offset + d.Y)
+                tapPos = i.Position
+            end
+        end
+    end)
+
+    botao.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+            if not moveuTap and (tick() - tapInicio) < 0.4 and not chamado then
+                chamado = true
+                pcall(callback)
+            end
+            tapPos = nil
+            moveuTap = false
+        end
+    end)
+end
+
+configurarTapBotao(abrir, function()
+    painel.Visible = true
+    abrir.Visible = false
+end)
+
+-- fallback desktop
+abrir.MouseButton1Click:Connect(function()
+    painel.Visible = true
+    abrir.Visible = false
+end)
+
+-- fechar
+local function fecharPainel()
+    painel.Visible = false
+    abrir.Visible = true
+end
+fechar.MouseButton1Click:Connect(fecharPainel)
+fechar.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch then fecharPainel() end
+end)
 
 -- ============================================================
 -- SCANNER
@@ -121,7 +182,7 @@ local ordSc=0
 
 local function addSc(nome,classe,path,inst)
     ordSc+=1
-    local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=ordSc},listaSc)
+    local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=ordSc,Active=true},listaSc)
     CR(b,3)
     N("TextLabel",{Size=UDim2.new(0,70,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text=classe,TextColor3=C.B,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,TextTruncate=Enum.TextTruncate.AtEnd},b)
     N("TextLabel",{Size=UDim2.new(1,-80,1,0),Position=UDim2.new(0,80,0,0),BackgroundTransparency=1,Text=nome,TextColor3=C.TX,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,TextTruncate=Enum.TextTruncate.AtEnd},b)
@@ -267,7 +328,6 @@ btn(inj,"▸ HOOK __index",function()
         mt.__index=newcclosure(function(t,k)
             local r=oldI(t,k)
             if k=="WalkSpeed" or k=="JumpPower" then
-                -- retorna valor "limpo" pra anticheat
                 if type(r)=="number" then return math.min(r, 30) end
             end
             return r
@@ -295,7 +355,7 @@ btn(rm,"▸ ESCANEAR",function()
     for _,o in ipairs(game:GetDescendants()) do
         if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") or o:IsA("UnreliableRemoteEvent") then
             n+=1; remOr+=1
-            local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=remOr},remLog)
+            local b=N("TextButton",{Size=UDim2.new(1,-2,0,IS_MOB and 28 or 22),BackgroundColor3=C.PAN2,Text="",BorderSizePixel=0,ZIndex=7,LayoutOrder=remOr,Active=true},remLog)
             CR(b,3)
             N("TextLabel",{Size=UDim2.new(0,60,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,Text=o.ClassName:gsub("Remote",""),TextColor3=C.B,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8},b)
             N("TextLabel",{Size=UDim2.new(1,-70,1,0),Position=UDim2.new(0,70,0,0),BackgroundTransparency=1,Text=o:GetFullName(),TextColor3=C.TX,TextSize=IS_MOB and 10 or 9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=8},b)
@@ -336,25 +396,13 @@ local function bpP(t,c) bpOr+=1; linha(bpLog,t,c or C.TX,bpOr); pcall(function()
 local function bypass()
     S.bypass=true
     bpP(">>> ATIVANDO CAMADAS <<<",C.AL)
-
-    -- 1. identity spoof
     pcall(function() if setthreadidentity then setthreadidentity(8); bpP("[OK] identity=8",C.B) end end)
-
-    -- 2. falsifica funções de detecção
     pcall(function()
         for _,f in ipairs({"checkcaller","islclosure"}) do if _G[f] then _G[f]=function() return true end end end
         for _,f in ipairs({"getidentity","getthreadidentity"}) do if _G[f] then _G[f]=function() return 8 end end end
         bpP("[OK] funções falsificadas",C.B)
     end)
-
-    -- 3. bloqueia Kick do server
-    pcall(function()
-        LP.Kick = function() end
-        LP.ClearAllChildren = function() end
-        bpP("[OK] Kick bloqueado",C.B)
-    end)
-
-    -- 4. hook __namecall: intercepta Kick, Destroy, GetPropertyChangedSignal
+    pcall(function() LP.Kick=function() end; LP.ClearAllChildren=function() end; bpP("[OK] Kick bloqueado",C.B) end)
     pcall(function()
         local mt=getrawmetatable(game); local oldNC=mt.__namecall
         setreadonly(mt,false)
@@ -372,8 +420,6 @@ local function bypass()
         setreadonly(mt,true)
         bpP("[OK] namecall filtrado",C.B)
     end)
-
-    -- 5. hook __index: retorna valores "limpos" pra anticheat que checa WalkSpeed
     pcall(function()
         local mt=getrawmetatable(game); local oldI=mt.__index
         setreadonly(mt,false)
@@ -387,8 +433,6 @@ local function bypass()
         setreadonly(mt,true)
         bpP("[OK] __index spoof (speed)",C.B)
     end)
-
-    -- 6. hook HttpGet/HttpPost (caso anticheat faça report via http)
     pcall(function()
         if hookfunction and getrawmetatable then
             local gm=getrawmetatable(game)
@@ -404,8 +448,6 @@ local function bypass()
             bpP("[OK] HttpGet bloqueado",C.B)
         end
     end)
-
-    -- 7. remove triggers de detecção
     pcall(function()
         for _,o in ipairs(game:GetDescendants()) do
             if o:IsA("Script") or o:IsA("LocalScript") then
@@ -417,7 +459,6 @@ local function bypass()
             end
         end
     end)
-
     bpP(">>> BYPASS COMPLETO <<<",C.AL)
 end
 
@@ -427,7 +468,6 @@ btn(bp,"▸ Anti-kick",function() pcall(function() LP.Kick=function() end; LP.Cl
 btn(bp,"▸ Testar detecção",function()
     bpP("checkcaller: "..tostring(checkcaller and checkcaller() or "?"),C.B)
     bpP("getidentity: "..tostring(getidentity and getidentity() or "?"),C.B)
-    bpP("islclosure: "..tostring(islclosure and "func" or "?"),C.B)
     bpP("executor: "..tostring(identifyexecutor and identifyexecutor() or "?"),C.B)
     bpP("hookfunction: "..tostring(hookfunction~=nil),C.B)
 end,C.AL).LayoutOrder=5
@@ -474,7 +514,6 @@ btn(dp,"▸ Ambiente",function()
     dpP("writefile: "..tostring(writefile~=nil),C.B)
     dpP("setclipboard: "..tostring(setclipboard~=nil),C.B)
     dpP("request: "..tostring(request~=nil),C.B)
-    dpP("syn: "..tostring(syn~=nil),C.B)
 end,C.AL).LayoutOrder=5
 
 -- ============================================================
@@ -567,7 +606,7 @@ btn(mn,"▸ PARAR",function() Mon.ativo=false; if Mon.conn then Mon.conn:Disconn
 btn(mn,"▸ AUTO-TP on/off",function() Mon.autoTP=not Mon.autoTP; mnP("auto-TP="..tostring(Mon.autoTP),C.AL) end,C.AL).LayoutOrder=4
 
 -- ============================================================
--- ATK (novos exploits)
+-- ATK
 -- ============================================================
 local atk=conts["ATK"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},atk)
@@ -578,51 +617,37 @@ atkLog.LayoutOrder=1
 local atkOr=0
 local function atkP(t,c) atkOr+=1; linha(atkLog,t,c or C.TX,atkOr); pcall(function() atkLog.CanvasPosition=Vector2.new(0,atkLog.AbsoluteCanvasSize.Y) end) end
 
--- Noclip persistente
 local noclipConn=nil
-local function noclipOn()
-    if noclipConn then return end
+btn(atk,"▸ NOCLIP on/off",function()
+    if noclipConn then
+        noclipConn:Disconnect(); noclipConn=nil; atkP("[OFF] noclip",C.ER)
+        if LP.Character then
+            for _,v in ipairs(LP.Character:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name~="HumanoidRootPart" then pcall(function() v.CanCollide=true end) end
+            end
+        end
+        return
+    end
     noclipConn=RunService.Stepped:Connect(function()
         if LP.Character then
             for _,v in ipairs(LP.Character:GetDescendants()) do
-                if v:IsA("BasePart") and v.CanCollide then
-                    pcall(function() v.CanCollide=false end)
-                end
+                if v:IsA("BasePart") and v.CanCollide then pcall(function() v.CanCollide=false end) end
             end
         end
     end)
-    atkP("[OK] noclip ON",C.B)
-end
-local function noclipOff()
-    if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
-    if LP.Character then
-        for _,v in ipairs(LP.Character:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name~="HumanoidRootPart" then
-                pcall(function() v.CanCollide=true end)
-            end
-        end
-    end
-    atkP("[OK] noclip OFF",C.ER)
-end
-
-btn(atk,"▸ NOCLIP on/off",function()
-    if noclipConn then noclipOff() else noclipOn() end
+    atkP("[ON] noclip",C.B)
 end,C.ER).LayoutOrder=2
 
--- Speed bypass com hook
 local speedConn=nil
 btn(atk,"▸ SPEED bypass (100)",function()
     if speedConn then speedConn:Disconnect(); speedConn=nil; atkP("[OFF] speed",C.ER); return end
     speedConn=RunService.Heartbeat:Connect(function()
         local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-        if h and h.WalkSpeed~=100 then
-            pcall(function() h.WalkSpeed=100 end)
-        end
+        if h and h.WalkSpeed~=100 then pcall(function() h.WalkSpeed=100 end) end
     end)
-    atkP("[ON] speed=100 (hook anti-revert)",C.B)
+    atkP("[ON] speed=100",C.B)
 end,C.ER).LayoutOrder=3
 
--- Jump bypass
 local jumpConn=nil
 btn(atk,"▸ INFINITE JUMP",function()
     if jumpConn then jumpConn:Disconnect(); jumpConn=nil; atkP("[OFF] jump",C.ER); return end
@@ -633,7 +658,6 @@ btn(atk,"▸ INFINITE JUMP",function()
     atkP("[ON] infinite jump",C.B)
 end,C.ER).LayoutOrder=4
 
--- Fly
 local flyBV,flyBG,flyConn=nil,nil,nil
 btn(atk,"▸ FLY on/off",function()
     if flyConn then
@@ -657,27 +681,23 @@ btn(atk,"▸ FLY on/off",function()
         flyBV.Velocity=mov*60
         flyBG.CFrame=cam
     end)
-    atkP("[ON] fly (WASD)",C.B)
+    atkP("[ON] fly",C.B)
 end,C.ER).LayoutOrder=5
 
--- Anti-void
 local avConn=nil
 btn(atk,"▸ ANTI-VOID",function()
     if avConn then avConn:Disconnect(); avConn=nil; atkP("[OFF] anti-void",C.ER); return end
     avConn=RunService.Heartbeat:Connect(function()
         local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if h and h.Position.Y<-100 then
-            pcall(function() h.CFrame=CFrame.new(0,50,0) end)
-        end
+        if h and h.Position.Y<-100 then pcall(function() h.CFrame=CFrame.new(0,50,0) end) end
     end)
     atkP("[ON] anti-void",C.B)
 end,C.ER).LayoutOrder=6
 
--- Anti-AFK
 btn(atk,"▸ ANTI-AFK",function()
     pcall(function()
+        local vu=game:GetService("VirtualUser")
         LP.Idled:Connect(function()
-            local vu=game:GetService("VirtualUser")
             vu:CaptureController()
             vu:ClickButton2(Vector2.new())
         end)
@@ -685,7 +705,6 @@ btn(atk,"▸ ANTI-AFK",function()
     end)
 end,C.ER).LayoutOrder=7
 
--- Explode alvo
 btn(atk,"▸ EXPLODE alvo",function()
     if not S.alvo then return end
     pcall(function()
@@ -698,54 +717,27 @@ btn(atk,"▸ EXPLODE alvo",function()
     end)
 end,C.ER).LayoutOrder=8
 
--- Fire alvo como arma (auto-attack)
 btn(atk,"▸ AUTO-FIRE no alvo (loop)",function()
     if not S.alvo then return end
-    if _G.ODD_AUTOFIRE then
-        _G.ODD_AUTOFIRE=false
-        atkP("[OFF] auto-fire",C.ER)
-        return
-    end
+    if _G.ODD_AUTOFIRE then _G.ODD_AUTOFIRE=false; atkP("[OFF] auto-fire",C.ER); return end
     _G.ODD_AUTOFIRE=true
     task.spawn(function()
         while _G.ODD_AUTOFIRE do
-            if S.alvo and S.alvo:IsA("RemoteEvent") then
-                pcall(function() S.alvo:FireServer() end)
-            end
+            if S.alvo and S.alvo:IsA("RemoteEvent") then pcall(function() S.alvo:FireServer() end) end
             task.wait(0.1)
         end
     end)
     atkP("[ON] auto-fire",C.B)
 end,C.ER).LayoutOrder=9
 
--- Desync tool (arma não solta)
-btn(atk,"▸ DESYNC Tool",function()
-    if not S.alvo or not S.alvo:IsA("Tool") then return end
-    pcall(function()
-        local char=LP.Character
-        if char and char:FindFirstChildOfClass("Humanoid") then
-            local tool=S.alvo:Clone()
-            tool.Parent=char
-            char.Humanoid:EquipTool(tool)
-            atkP("[DESYNC] "..tool.Name,C.B)
-        end
-    end)
-end,C.AL).LayoutOrder=10
-
--- Rejoin (se writefile/executor permitir)
 btn(atk,"▸ REJOIN servidor",function()
     pcall(function()
         local ts=game:GetService("TeleportService")
         ts:Teleport(game.PlaceId, LP)
-        atkP("[REJOIN] teleport",C.AL)
+        atkP("[REJOIN]",C.AL)
     end)
-end,C.AL).LayoutOrder=11
+end,C.AL).LayoutOrder=10
 
--- ============================================================
--- abrir/fechar
--- ============================================================
-abrir.MouseButton1Click:Connect(function() painel.Visible=true; abrir.Visible=false end)
-fechar.MouseButton1Click:Connect(function() painel.Visible=false; abrir.Visible=true end)
-
+-- iniciar
 mostrar("SCAN")
-print("[OLHO DE DEUS v8] hardened ok")
+print("[OLHO DE DEUS v8.1] ok — tap fix")
