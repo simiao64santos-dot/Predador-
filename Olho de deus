@@ -1,4 +1,4 @@
---[[ OLHO DE DEUS v7.1 — ABAS + COMPACTO ]]
+--[[ OLHO DE DEUS v8.0 — HARDENED ]]
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
@@ -14,7 +14,7 @@ local C = {
     B=Color3.fromRGB(0,255,140), BD=Color3.fromRGB(0,90,55), TX=Color3.fromRGB(180,255,210),
     DM=Color3.fromRGB(0,130,80), AL=Color3.fromRGB(255,200,0), ER=Color3.fromRGB(255,70,70),
 }
-local S = {alvo=nil, hooks={}}
+local S = {alvo=nil, hooks={}, bypass=false}
 
 local P
 do
@@ -46,11 +46,10 @@ CR(painel,8); ST(painel,C.B,2)
 local hd = N("Frame",{Size=UDim2.new(1,0,0,46),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},painel)
 CR(hd,8)
 N("Frame",{Size=UDim2.new(1,0,0,8),Position=UDim2.new(0,0,1,-8),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},hd)
-N("TextLabel",{Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,14,0,0),BackgroundTransparency=1,Text="◉ OLHO DE DEUS",TextColor3=C.B,TextSize=IS_MOB and 15 or 14,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7},hd)
+N("TextLabel",{Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,14,0,0),BackgroundTransparency=1,Text="◉ OLHO DE DEUS v8",TextColor3=C.B,TextSize=IS_MOB and 15 or 14,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7},hd)
 local fechar=N("TextButton",{Size=UDim2.new(0,34,0,34),Position=UDim2.new(1,-42,0.5,-17),BackgroundColor3=C.ER,Text="X",TextColor3=Color3.new(1,1,1),TextSize=16,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7},hd)
 CR(fechar,6); DRAG(painel,hd)
 
--- barra de abas (scroll horizontal)
 local bw = N("Frame",{Size=UDim2.new(1,-16,0,44),Position=UDim2.new(0,8,0,54),BackgroundColor3=C.PAN,BorderSizePixel=0,ZIndex=6},painel)
 CR(bw,6)
 local bar = N("ScrollingFrame",{Size=UDim2.new(1,-8,1,-8),Position=UDim2.new(0,4,0,4),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.X,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.X,ZIndex=7},bw)
@@ -58,7 +57,7 @@ N("UIListLayout",{Padding=UDim.new(0,4),FillDirection=Enum.FillDirection.Horizon
 
 local cont = N("Frame",{Size=UDim2.new(1,-16,1,-104),Position=UDim2.new(0,8,0,100),BackgroundTransparency=1,ZIndex=6},painel)
 
-local abasNomes = {"SCAN","EDIT","CONS","INJ","REM","BYP","DUMP","TP","MON"}
+local abasNomes = {"SCAN","EDIT","CONS","INJ","REM","BYP","DUMP","TP","MON","ATK"}
 local abas, conts = {}, {}
 
 local function mostrar(nome)
@@ -70,7 +69,7 @@ local function mostrar(nome)
 end
 
 for i,nome in ipairs(abasNomes) do
-    local b=N("TextButton",{Size=UDim2.new(0,IS_MOB and 68 or 60,1,0),BackgroundColor3=C.BG,Text=nome,TextColor3=C.DM,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,LayoutOrder=i},bar)
+    local b=N("TextButton",{Size=UDim2.new(0,IS_MOB and 66 or 58,1,0),BackgroundColor3=C.BG,Text=nome,TextColor3=C.DM,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=7,LayoutOrder=i},bar)
     CR(b,4)
     abas[nome]=b
     local f=N("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false,ZIndex=6},cont)
@@ -78,7 +77,6 @@ for i,nome in ipairs(abasNomes) do
     b.MouseButton1Click:Connect(function() mostrar(nome) end)
 end
 
--- componentes
 local function btn(pai,txt,cb,cor)
     local b=N("TextButton",{Size=UDim2.new(1,0,0,IS_MOB and 40 or 30),BackgroundColor3=C.PAN,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 12 or 11,Font=Enum.Font.Code,BorderSizePixel=0,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=6},pai)
     N("UIPadding",{PaddingLeft=UDim.new(0,10)},b); CR(b,4); ST(b,C.BD,1)
@@ -98,15 +96,26 @@ local function linha(s,txt,cor,ord)
     N("TextLabel",{Size=UDim2.new(1,0,0,IS_MOB and 16 or 14),BackgroundTransparency=1,Text=txt,TextColor3=cor or C.TX,TextSize=IS_MOB and 11 or 10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,LayoutOrder=ord or 0,TextTruncate=Enum.TextTruncate.AtEnd},s)
 end
 
+-- console global (compartilhado pra todos logs)
+local coGlobal
+local coOrG = 0
+local function glog(t,c)
+    if not coGlobal then return end
+    coOrG+=1; linha(coGlobal,t,c or C.TX,coOrG)
+    pcall(function() coGlobal.CanvasPosition=Vector2.new(0,coGlobal.AbsoluteCanvasSize.Y) end)
+end
+
+-- ============================================================
 -- SCANNER
+-- ============================================================
 local sc=conts["SCAN"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},sc)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},sc)
 
-local btnsF=N("Frame",{Size=UDim2.new(1,0,0,IS_MOB and 140 or 100),BackgroundTransparency=1,LayoutOrder=1},sc)
-N("UIGridLayout",{CellSize=UDim2.new(0.5,-2,0,IS_MOB and 32 or 26),CellPadding=UDim2.new(0,4,0,4),SortOrder=Enum.SortOrder.LayoutOrder},btnsF)
+local btnsF=N("Frame",{Size=UDim2.new(1,0,0,IS_MOB and 172 or 132),BackgroundTransparency=1,LayoutOrder=1},sc)
+N("UIGridLayout",{CellSize=UDim2.new(0.5,-2,0,IS_MOB and 32 or 26),CellPadding=UDim.new(0,4,0,4),SortOrder=Enum.SortOrder.LayoutOrder},btnsF)
 
-local listaSc=term(sc,IS_MOB and 320 or 280)
+local listaSc=term(sc,IS_MOB and 280 or 260)
 listaSc.LayoutOrder=2
 local ordSc=0
 
@@ -132,10 +141,14 @@ local scans={
     {"SCRIPTS", function() scan(game,"LuaSourceContainer") end, C.B},
     {"ITENS", function() limpaSc(); local pats={"Coin","Gem","Chest","Money","Cash","Drop","Loot","Orb","Crystal","Reward","Item"}; local n=0; for _,o in ipairs(workspace:GetDescendants()) do if o:IsA("BasePart") then for _,p in ipairs(pats) do if o.Name:find(p,1,true) then n+=1; if n<=250 then addSc(o.Name,o.ClassName,o:GetFullName(),o) end; break end end end end end, C.AL},
     {"TOOLS", function() limpaSc(); local n=0; for _,p in ipairs(Players:GetPlayers()) do if p.Character then local h=p.Character:FindFirstChild("HumanoidRootPart"); if h then n+=1; addSc(p.Name,"HRP",h:GetFullName(),h) end; for _,t in ipairs(p.Character:GetChildren()) do if t:IsA("Tool") then n+=1; addSc(t.Name,"Tool",t:GetFullName(),t) end end end end end, C.B},
+    {"PLRS", function() limpaSc(); local n=0; for _,p in ipairs(Players:GetPlayers()) do if p.Character then n+=1; addSc(p.Name,"Player",p.Name,p.Character) end end end, C.B},
+    {"VEÍC", function() limpaSc(); local n=0; for _,o in ipairs(workspace:GetDescendants()) do if o:IsA("VehicleSeat") or o.Name:find("Vehicle") or o.Name:find("Car") then n+=1; if n<=100 then addSc(o.Name,o.ClassName,o:GetFullName(),o) end end end end, C.B},
 }
 for i,e in ipairs(scans) do btn(btnsF,e[1],e[2],e[3]).LayoutOrder=i end
 
+-- ============================================================
 -- EDITOR
+-- ============================================================
 local ed=conts["EDIT"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},ed)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},ed)
@@ -164,7 +177,7 @@ end
 _G.ODD_ED=function()
     if not S.alvo then return end
     edClear()
-    for _,p in ipairs({"Name","Transparency","CanCollide","Anchored","WalkSpeed","JumpPower","Health","MaxHealth","Visible","Enabled","Size","Position","Color","Text","Value"}) do
+    for _,p in ipairs({"Name","Transparency","CanCollide","Anchored","Massless","WalkSpeed","JumpPower","Health","MaxHealth","Visible","Enabled","Size","Position","Color","Text","Value","Material","Reflectance","Brightness","Range","Volume","Speed","MaxDistance"}) do
         local ok,v=pcall(function() return S.alvo[p] end)
         if ok and v~=nil then
             local tp=type(v)
@@ -175,7 +188,9 @@ _G.ODD_ED=function()
     end
 end
 
+-- ============================================================
 -- CONSOLE
+-- ============================================================
 local co=conts["CONS"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},co)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},co)
@@ -185,9 +200,9 @@ CR(coIn,4); ST(coIn,C.BD,1); N("UIPadding",{PaddingLeft=UDim.new(0,8)},coIn)
 
 local coLog=term(co,IS_MOB and 440 or 400)
 coLog.LayoutOrder=2
-local coOr=0
+coGlobal = coLog
 local function coP(t,c)
-    coOr+=1; linha(coLog,t,c or C.TX,coOr)
+    coOrG+=1; linha(coLog,t,c or C.TX,coOrG)
     pcall(function() coLog.CanvasPosition=Vector2.new(0,coLog.AbsoluteCanvasSize.Y) end)
 end
 local function exec(codigo)
@@ -199,7 +214,9 @@ local function exec(codigo)
 end
 coIn.FocusLost:Connect(function(e) if e and coIn.Text~="" then exec(coIn.Text); coIn.Text="" end end)
 
+-- ============================================================
 -- INJETOR
+-- ============================================================
 local inj=conts["INJ"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},inj)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},inj)
@@ -243,9 +260,27 @@ btn(inj,"▸ HOOK __namecall",function()
         injP("[OK] hook",C.B)
     end)
 end,C.AL).LayoutOrder=5
-btn(inj,"▸ MATAR hooks",function() for _,h in ipairs(S.hooks) do for _,c in ipairs(h.conns) do pcall(function() c:Disconnect() end) end end; S.hooks={}; injP("[KILL]",C.ER) end,C.ER).LayoutOrder=6
+btn(inj,"▸ HOOK __index",function()
+    pcall(function()
+        local mt=getrawmetatable(game); local oldI=mt.__index
+        setreadonly(mt,false)
+        mt.__index=newcclosure(function(t,k)
+            local r=oldI(t,k)
+            if k=="WalkSpeed" or k=="JumpPower" then
+                -- retorna valor "limpo" pra anticheat
+                if type(r)=="number" then return math.min(r, 30) end
+            end
+            return r
+        end)
+        setreadonly(mt,true)
+        injP("[OK] __index hook",C.B)
+    end)
+end,C.AL).LayoutOrder=6
+btn(inj,"▸ MATAR hooks",function() for _,h in ipairs(S.hooks) do for _,c in ipairs(h.conns) do pcall(function() c:Disconnect() end) end end; S.hooks={}; injP("[KILL]",C.ER) end,C.ER).LayoutOrder=7
 
+-- ============================================================
 -- REMOTES
+-- ============================================================
 local rm=conts["REM"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},rm)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},rm)
@@ -273,14 +308,22 @@ btn(rm,"▸ FIRAR",function()
     if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then pcall(function() a:FireServer() end)
     elseif a:IsA("RemoteFunction") then pcall(function() a:InvokeServer() end) end
 end,C.AL).LayoutOrder=3
+btn(rm,"▸ FIRAR SPAM x10",function()
+    local a=S.alvo; if not a then return end
+    if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
+        for i=1,10 do task.spawn(function() pcall(function() a:FireServer() end) end); task.wait(0.05) end
+    end
+end,C.ER).LayoutOrder=4
 btn(rm,"▸ OBSERVAR",function()
     local a=S.alvo; if not a then return end
     if a:IsA("RemoteEvent") or a:IsA("UnreliableRemoteEvent") then
         a.OnClientEvent:Connect(function(...) local t={} for i=1,select("#",...) do t[i]=tostring(select(i,...)) end coP("[RECV] "..a.Name.."("..table.concat(t,",")..")",C.AL) end)
     end
-end,C.AL).LayoutOrder=4
+end,C.AL).LayoutOrder=5
 
+-- ============================================================
 -- BYPASS
+-- ============================================================
 local bp=conts["BYP"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},bp)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},bp)
@@ -290,22 +333,108 @@ bpLog.LayoutOrder=1
 local bpOr=0
 local function bpP(t,c) bpOr+=1; linha(bpLog,t,c or C.TX,bpOr); pcall(function() bpLog.CanvasPosition=Vector2.new(0,bpLog.AbsoluteCanvasSize.Y) end) end
 
-btn(bp,"▸ ATIVAR bypass",function()
+local function bypass()
+    S.bypass=true
+    bpP(">>> ATIVANDO CAMADAS <<<",C.AL)
+
+    -- 1. identity spoof
+    pcall(function() if setthreadidentity then setthreadidentity(8); bpP("[OK] identity=8",C.B) end end)
+
+    -- 2. falsifica funções de detecção
     pcall(function()
-        if setthreadidentity then setthreadidentity(8); bpP("[OK] identity 8",C.B) end
         for _,f in ipairs({"checkcaller","islclosure"}) do if _G[f] then _G[f]=function() return true end end end
         for _,f in ipairs({"getidentity","getthreadidentity"}) do if _G[f] then _G[f]=function() return 8 end end end
-        bpP("[OK] bypass",C.B)
+        bpP("[OK] funções falsificadas",C.B)
     end)
-end,C.ER).LayoutOrder=2
-btn(bp,"▸ Anti-kick",function() pcall(function() LP.Kick=function() end; LP.ClearAllChildren=function() end; bpP("[OK] kick off",C.B) end) end,C.ER).LayoutOrder=3
-btn(bp,"▸ Testar",function()
+
+    -- 3. bloqueia Kick do server
+    pcall(function()
+        LP.Kick = function() end
+        LP.ClearAllChildren = function() end
+        bpP("[OK] Kick bloqueado",C.B)
+    end)
+
+    -- 4. hook __namecall: intercepta Kick, Destroy, GetPropertyChangedSignal
+    pcall(function()
+        local mt=getrawmetatable(game); local oldNC=mt.__namecall
+        setreadonly(mt,false)
+        mt.__namecall=newcclosure(function(self,...)
+            local m=getnamecallmethod()
+            if m=="Kick" or m=="Destroy" or m=="ClearAllChildren" then
+                local s=tostring(self)
+                if s:find("AntiCheat") or s:find("Byfron") or s:find("AC") or s:find("Log") then
+                    bpP("[BLOCK] "..s..":"..m,C.ER)
+                    return
+                end
+            end
+            return oldNC(self,...)
+        end)
+        setreadonly(mt,true)
+        bpP("[OK] namecall filtrado",C.B)
+    end)
+
+    -- 5. hook __index: retorna valores "limpos" pra anticheat que checa WalkSpeed
+    pcall(function()
+        local mt=getrawmetatable(game); local oldI=mt.__index
+        setreadonly(mt,false)
+        mt.__index=newcclosure(function(t,k)
+            local r=oldI(t,k)
+            if (k=="WalkSpeed" or k=="JumpPower") and t:IsA("Humanoid") then
+                if type(r)=="number" and r>32 then return 16 end
+            end
+            return r
+        end)
+        setreadonly(mt,true)
+        bpP("[OK] __index spoof (speed)",C.B)
+    end)
+
+    -- 6. hook HttpGet/HttpPost (caso anticheat faça report via http)
+    pcall(function()
+        if hookfunction and getrawmetatable then
+            local gm=getrawmetatable(game)
+            local oldIdx=gm.__index
+            setreadonly(gm,false)
+            gm.__index=newcclosure(function(t,k)
+                if k=="HttpGet" or k=="HttpGetAsync" or k=="HttpPost" then
+                    return function() return "" end
+                end
+                return oldIdx(t,k)
+            end)
+            setreadonly(gm,true)
+            bpP("[OK] HttpGet bloqueado",C.B)
+        end
+    end)
+
+    -- 7. remove triggers de detecção
+    pcall(function()
+        for _,o in ipairs(game:GetDescendants()) do
+            if o:IsA("Script") or o:IsA("LocalScript") then
+                local nm=o.Name:lower()
+                if nm:find("anticheat") or nm:find("detect") or nm:find("log") or nm:find("report") then
+                    pcall(function() o.Disabled=true end)
+                    bpP("[DISABLE] "..o:GetFullName(),C.AL)
+                end
+            end
+        end
+    end)
+
+    bpP(">>> BYPASS COMPLETO <<<",C.AL)
+end
+
+btn(bp,"▸ ATIVAR bypass completo",bypass,C.ER).LayoutOrder=2
+btn(bp,"▸ DESATIVAR",function() S.bypass=false; bpP(">>> OFF <<<",C.ER) end,C.ER).LayoutOrder=3
+btn(bp,"▸ Anti-kick",function() pcall(function() LP.Kick=function() end; LP.ClearAllChildren=function() end; bpP("[OK] kick off",C.B) end) end,C.ER).LayoutOrder=4
+btn(bp,"▸ Testar detecção",function()
     bpP("checkcaller: "..tostring(checkcaller and checkcaller() or "?"),C.B)
     bpP("getidentity: "..tostring(getidentity and getidentity() or "?"),C.B)
+    bpP("islclosure: "..tostring(islclosure and "func" or "?"),C.B)
     bpP("executor: "..tostring(identifyexecutor and identifyexecutor() or "?"),C.B)
-end,C.AL).LayoutOrder=4
+    bpP("hookfunction: "..tostring(hookfunction~=nil),C.B)
+end,C.AL).LayoutOrder=5
 
+-- ============================================================
 -- DUMP
+-- ============================================================
 local dp=conts["DUMP"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},dp)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},dp)
@@ -329,19 +458,33 @@ btn(dp,"▸ Dump RS → arquivo",function()
         if writefile then writefile("odd_rs.json",j); dpP("[OK] "..#j.."b",C.B) end
     end)
 end,C.B).LayoutOrder=3
+btn(dp,"▸ Dump SCRIPTS",function()
+    local n=0
+    for _,o in ipairs(game:GetDescendants()) do
+        if o:IsA("LuaSourceContainer") then
+            local ok,src=pcall(function() return o.Source end)
+            if ok and src and #src>0 then n+=1; dpP("["..#src.."b] "..o:GetFullName(),C.B); if n>=50 then break end end
+        end
+    end
+end,C.AL).LayoutOrder=4
 btn(dp,"▸ Ambiente",function()
     dpP("executor: "..tostring(identifyexecutor and identifyexecutor() or "?"),C.B)
     dpP("getrawmetatable: "..tostring(getrawmetatable~=nil),C.B)
+    dpP("hookfunction: "..tostring(hookfunction~=nil),C.B)
     dpP("writefile: "..tostring(writefile~=nil),C.B)
     dpP("setclipboard: "..tostring(setclipboard~=nil),C.B)
-end,C.AL).LayoutOrder=4
+    dpP("request: "..tostring(request~=nil),C.B)
+    dpP("syn: "..tostring(syn~=nil),C.B)
+end,C.AL).LayoutOrder=5
 
+-- ============================================================
 -- TELEPORT
+-- ============================================================
 local tp=conts["TP"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},tp)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},tp)
 
-local tpLog=term(tp,IS_MOB and 280 or 320)
+local tpLog=term(tp,IS_MOB and 240 or 280)
 tpLog.LayoutOrder=1
 local tpOr=0
 local function tpP(t,c) tpOr+=1; linha(tpLog,t,c or C.TX,tpOr); pcall(function() tpLog.CanvasPosition=Vector2.new(0,tpLog.AbsoluteCanvasSize.Y) end) end
@@ -351,23 +494,42 @@ local function tpTo(cf,label)
     if ok then tpP("[TP] "..(label or "ok"),C.B) end
 end
 
+local function tpSuave(cf,label)
+    local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not h then return end
+    local start=h.CFrame; local conn,t=nil,0
+    conn=RunService.Heartbeat:Connect(function(dt)
+        t+=dt*2
+        if t>=1 then t=1; conn:Disconnect() end
+        pcall(function() h.CFrame=start:Lerp(cf,t) end)
+    end)
+    tpP("[TP-SUAVE] "..(label or "ok"),C.B)
+end
+
 btn(tp,"▸ TP → ALVO",function()
     if not S.alvo then return end
     local pos=S.alvo.Position or (S.alvo.CFrame and S.alvo.CFrame.Position)
     if pos then tpTo(CFrame.new(pos+Vector3.new(0,4,0)),S.alvo.Name) end
 end,C.AL).LayoutOrder=2
-btn(tp,"▸ TP → CHÃO",function() tpTo(CFrame.new(0,10,0),"origem") end,C.B).LayoutOrder=3
+btn(tp,"▸ TP → ALVO (SUAVE)",function()
+    if not S.alvo then return end
+    local pos=S.alvo.Position or (S.alvo.CFrame and S.alvo.CFrame.Position)
+    if pos then tpSuave(CFrame.new(pos+Vector3.new(0,4,0)),S.alvo.Name) end
+end,C.AL).LayoutOrder=3
+btn(tp,"▸ TP → CHÃO",function() tpTo(CFrame.new(0,10,0),"origem") end,C.B).LayoutOrder=4
 btn(tp,"▸ SALVAR posição",function()
     local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if h then _G.SAVED=h.CFrame; tpP("[SAVE] ok",C.B) end
-end,C.B).LayoutOrder=4
-btn(tp,"▸ VOLTAR posição",function() if _G.SAVED then tpTo(_G.SAVED,"salva") end end,C.B).LayoutOrder=5
+end,C.B).LayoutOrder=5
+btn(tp,"▸ VOLTAR posição",function() if _G.SAVED then tpTo(_G.SAVED,"salva") end end,C.B).LayoutOrder=6
 btn(tp,"▸ DUP → Backpack",function()
     if not S.alvo or not S.alvo:IsA("Tool") then return end
     pcall(function() local b=LP:FindFirstChild("Backpack"); if b then local c=S.alvo:Clone(); c.Parent=b; tpP("[DUP] "..c.Name,C.B) end end)
-end,C.AL).LayoutOrder=6
+end,C.AL).LayoutOrder=7
 
+-- ============================================================
 -- MONITOR
+-- ============================================================
 local mn=conts["MON"]
 N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},mn)
 N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},mn)
@@ -404,9 +566,186 @@ end,C.B).LayoutOrder=2
 btn(mn,"▸ PARAR",function() Mon.ativo=false; if Mon.conn then Mon.conn:Disconnect(); Mon.conn=nil end; mnP(">>> OFF <<<",C.ER) end,C.ER).LayoutOrder=3
 btn(mn,"▸ AUTO-TP on/off",function() Mon.autoTP=not Mon.autoTP; mnP("auto-TP="..tostring(Mon.autoTP),C.AL) end,C.AL).LayoutOrder=4
 
+-- ============================================================
+-- ATK (novos exploits)
+-- ============================================================
+local atk=conts["ATK"]
+N("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder},atk)
+N("UIPadding",{PaddingTop=UDim.new(0,2),PaddingLeft=UDim.new(0,2),PaddingRight=UDim.new(0,2)},atk)
+
+local atkLog=term(atk,IS_MOB and 380 or 420)
+atkLog.LayoutOrder=1
+local atkOr=0
+local function atkP(t,c) atkOr+=1; linha(atkLog,t,c or C.TX,atkOr); pcall(function() atkLog.CanvasPosition=Vector2.new(0,atkLog.AbsoluteCanvasSize.Y) end) end
+
+-- Noclip persistente
+local noclipConn=nil
+local function noclipOn()
+    if noclipConn then return end
+    noclipConn=RunService.Stepped:Connect(function()
+        if LP.Character then
+            for _,v in ipairs(LP.Character:GetDescendants()) do
+                if v:IsA("BasePart") and v.CanCollide then
+                    pcall(function() v.CanCollide=false end)
+                end
+            end
+        end
+    end)
+    atkP("[OK] noclip ON",C.B)
+end
+local function noclipOff()
+    if noclipConn then noclipConn:Disconnect(); noclipConn=nil end
+    if LP.Character then
+        for _,v in ipairs(LP.Character:GetDescendants()) do
+            if v:IsA("BasePart") and v.Name~="HumanoidRootPart" then
+                pcall(function() v.CanCollide=true end)
+            end
+        end
+    end
+    atkP("[OK] noclip OFF",C.ER)
+end
+
+btn(atk,"▸ NOCLIP on/off",function()
+    if noclipConn then noclipOff() else noclipOn() end
+end,C.ER).LayoutOrder=2
+
+-- Speed bypass com hook
+local speedConn=nil
+btn(atk,"▸ SPEED bypass (100)",function()
+    if speedConn then speedConn:Disconnect(); speedConn=nil; atkP("[OFF] speed",C.ER); return end
+    speedConn=RunService.Heartbeat:Connect(function()
+        local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if h and h.WalkSpeed~=100 then
+            pcall(function() h.WalkSpeed=100 end)
+        end
+    end)
+    atkP("[ON] speed=100 (hook anti-revert)",C.B)
+end,C.ER).LayoutOrder=3
+
+-- Jump bypass
+local jumpConn=nil
+btn(atk,"▸ INFINITE JUMP",function()
+    if jumpConn then jumpConn:Disconnect(); jumpConn=nil; atkP("[OFF] jump",C.ER); return end
+    jumpConn=UserInput.JumpRequest:Connect(function()
+        local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if h then pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end) end
+    end)
+    atkP("[ON] infinite jump",C.B)
+end,C.ER).LayoutOrder=4
+
+-- Fly
+local flyBV,flyBG,flyConn=nil,nil,nil
+btn(atk,"▸ FLY on/off",function()
+    if flyConn then
+        flyConn:Disconnect(); flyConn=nil
+        if flyBV then flyBV:Destroy(); flyBV=nil end
+        if flyBG then flyBG:Destroy(); flyBG=nil end
+        atkP("[OFF] fly",C.ER); return
+    end
+    local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not h then atkP("sem HRP",C.ER); return end
+    flyBV=Instance.new("BodyVelocity",h); flyBV.MaxForce=Vector3.new(1e5,1e5,1e5); flyBV.Velocity=Vector3.zero
+    flyBG=Instance.new("BodyGyro",h); flyBG.MaxTorque=Vector3.new(1e5,1e5,1e5); flyBG.P=3000
+    flyConn=RunService.Heartbeat:Connect(function()
+        if not flyBV or not flyBG then return end
+        local mov=Vector3.zero; local cam=Cam.CFrame
+        if UserInput:IsKeyDown(Enum.KeyCode.W) then mov+=cam.LookVector end
+        if UserInput:IsKeyDown(Enum.KeyCode.S) then mov-=cam.LookVector end
+        if UserInput:IsKeyDown(Enum.KeyCode.A) then mov-=cam.RightVector end
+        if UserInput:IsKeyDown(Enum.KeyCode.D) then mov+=cam.RightVector end
+        if UserInput:IsKeyDown(Enum.KeyCode.Space) then mov+=Vector3.new(0,1,0) end
+        flyBV.Velocity=mov*60
+        flyBG.CFrame=cam
+    end)
+    atkP("[ON] fly (WASD)",C.B)
+end,C.ER).LayoutOrder=5
+
+-- Anti-void
+local avConn=nil
+btn(atk,"▸ ANTI-VOID",function()
+    if avConn then avConn:Disconnect(); avConn=nil; atkP("[OFF] anti-void",C.ER); return end
+    avConn=RunService.Heartbeat:Connect(function()
+        local h=LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if h and h.Position.Y<-100 then
+            pcall(function() h.CFrame=CFrame.new(0,50,0) end)
+        end
+    end)
+    atkP("[ON] anti-void",C.B)
+end,C.ER).LayoutOrder=6
+
+-- Anti-AFK
+btn(atk,"▸ ANTI-AFK",function()
+    pcall(function()
+        LP.Idled:Connect(function()
+            local vu=game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new())
+        end)
+        atkP("[ON] anti-afk",C.B)
+    end)
+end,C.ER).LayoutOrder=7
+
+-- Explode alvo
+btn(atk,"▸ EXPLODE alvo",function()
+    if not S.alvo then return end
+    pcall(function()
+        local e=Instance.new("Explosion")
+        e.BlastRadius=50
+        e.BlastPressure=500000
+        e.Position=S.alvo.Position or (S.alvo.CFrame and S.alvo.CFrame.Position) or Vector3.zero
+        e.Parent=workspace
+        atkP("[EXP] "..S.alvo.Name,C.ER)
+    end)
+end,C.ER).LayoutOrder=8
+
+-- Fire alvo como arma (auto-attack)
+btn(atk,"▸ AUTO-FIRE no alvo (loop)",function()
+    if not S.alvo then return end
+    if _G.ODD_AUTOFIRE then
+        _G.ODD_AUTOFIRE=false
+        atkP("[OFF] auto-fire",C.ER)
+        return
+    end
+    _G.ODD_AUTOFIRE=true
+    task.spawn(function()
+        while _G.ODD_AUTOFIRE do
+            if S.alvo and S.alvo:IsA("RemoteEvent") then
+                pcall(function() S.alvo:FireServer() end)
+            end
+            task.wait(0.1)
+        end
+    end)
+    atkP("[ON] auto-fire",C.B)
+end,C.ER).LayoutOrder=9
+
+-- Desync tool (arma não solta)
+btn(atk,"▸ DESYNC Tool",function()
+    if not S.alvo or not S.alvo:IsA("Tool") then return end
+    pcall(function()
+        local char=LP.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            local tool=S.alvo:Clone()
+            tool.Parent=char
+            char.Humanoid:EquipTool(tool)
+            atkP("[DESYNC] "..tool.Name,C.B)
+        end
+    end)
+end,C.AL).LayoutOrder=10
+
+-- Rejoin (se writefile/executor permitir)
+btn(atk,"▸ REJOIN servidor",function()
+    pcall(function()
+        local ts=game:GetService("TeleportService")
+        ts:Teleport(game.PlaceId, LP)
+        atkP("[REJOIN] teleport",C.AL)
+    end)
+end,C.AL).LayoutOrder=11
+
+-- ============================================================
 -- abrir/fechar
+-- ============================================================
 abrir.MouseButton1Click:Connect(function() painel.Visible=true; abrir.Visible=false end)
 fechar.MouseButton1Click:Connect(function() painel.Visible=false; abrir.Visible=true end)
 
 mostrar("SCAN")
-print("[OLHO DE DEUS v7.1] ok")
+print("[OLHO DE DEUS v8] hardened ok")
