@@ -1,17 +1,13 @@
 --[[
 ================================================================================
-  NEXUS-7 :: RECON + BASE-GEN + STEALTH ENGINE (UI EDITION v7.1)
+  NEXUS-7 :: RECON + BASE-GEN + STEALTH ENGINE (UI EDITION v7.2)
   ------------------------------------------------------------------------------
-  - Compatível com Celular e PC.
-  - UI responsiva com Toggle, Console e Copiar.
-  - Anti-freeze: Loops pesados usam task.wait().
-  - FIX: Fallback de UI (gethui -> CoreGui -> PlayerGui) para nunca falhar.
+  - FIX CRÍTICO: Impedido o erro silencioso ao tentar salvar pontuações 
+    diretamente dentro de objetos do Roblox.
+  - FIX: Adicionado pcall global para reportar erros no Console.
 ================================================================================
 ]]
 
--- ============================================================================
--- 1. PROTEÇÃO E CONFIGURAÇÃO INICIAL
--- ============================================================================
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ReplicatedFirst   = game:GetService("ReplicatedFirst")
@@ -47,9 +43,6 @@ local CONFIG = {
 local NEXUS_LOGS = {}
 local updateUIConsole = nil
 
--- ============================================================================
--- 2. SISTEMA DE LOG E CONSOLE
--- ============================================================================
 local function logToConsole(msg)
     local text = tostring(msg)
     local timestamp = os.date("%H:%M:%S")
@@ -64,30 +57,23 @@ local function getConsoleText()
 end
 
 -- ============================================================================
--- 3. INTERFACE GRÁFICA (UI) - MOBILE E PC
+-- UI
 -- ============================================================================
 local function getSafeParent()
-    -- Tenta usar o gethui (padrão de executores modernos)
     if type(gethui) == "function" then
         local ok, hui = pcall(gethui)
         if ok and hui then return hui end
     end
-    
-    -- Tenta o CoreGui
     local ok, cgui = pcall(function() return game:GetService("CoreGui") end)
     if ok and cgui then 
-        -- Testa se consegue ler (alguns jogos bloqueiam)
         local readOk = pcall(function() return cgui.Name end)
         if readOk then return cgui end
     end
-    
-    -- Fallback final: PlayerGui (sempre funciona)
     return Players.LocalPlayer:WaitForChild("PlayerGui")
 end
 
 local function createUI()
     local parent = getSafeParent()
-    
     local oldGui = parent:FindFirstChild("Nexus7Gui")
     if oldGui then oldGui:Destroy() end
 
@@ -96,7 +82,6 @@ local function createUI()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = parent
 
-    -- Frame Principal
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 220, 0, 160)
@@ -111,7 +96,6 @@ local function createUI()
     UICorner.CornerRadius = UDim.new(0, 8)
     UICorner.Parent = MainFrame
 
-    -- Título
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 30)
     Title.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
@@ -126,7 +110,6 @@ local function createUI()
     TitleCorner.CornerRadius = UDim.new(0, 8)
     TitleCorner.Parent = Title
 
-    -- Botão Toggle
     local ToggleBtn = Instance.new("TextButton")
     ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
     ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
@@ -141,7 +124,6 @@ local function createUI()
     ToggleCorner.CornerRadius = UDim.new(0, 4)
     ToggleCorner.Parent = ToggleBtn
 
-    -- Botão Console
     local ConsoleBtn = Instance.new("TextButton")
     ConsoleBtn.Size = UDim2.new(0.9, 0, 0, 30)
     ConsoleBtn.Position = UDim2.new(0.05, 0, 0, 80)
@@ -156,7 +138,6 @@ local function createUI()
     ConsoleCorner.CornerRadius = UDim.new(0, 4)
     ConsoleCorner.Parent = ConsoleBtn
 
-    -- Botão Copiar
     local CopyBtn = Instance.new("TextButton")
     CopyBtn.Size = UDim2.new(0.9, 0, 0, 30)
     CopyBtn.Position = UDim2.new(0.05, 0, 0, 120)
@@ -171,7 +152,6 @@ local function createUI()
     CopyCorner.CornerRadius = UDim.new(0, 4)
     CopyCorner.Parent = CopyBtn
 
-    -- Painel do Console
     local ConsoleFrame = Instance.new("Frame")
     ConsoleFrame.Name = "ConsoleFrame"
     ConsoleFrame.Size = UDim2.new(0.95, 0, 0, 0)
@@ -207,7 +187,6 @@ local function createUI()
     ConsoleText.Text = "-- Console vazio --"
     ConsoleText.Parent = ScrollFrame
 
-    -- Lógica para arrastar no Celular
     local dragging, dragInput, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -231,9 +210,7 @@ local function createUI()
         end
     end)
 
-    -- Lógica dos Botões
     local consoleOpen = false
-    
     ToggleBtn.MouseButton1Click:Connect(function()
         CONFIG.Stealth.Enabled = not CONFIG.Stealth.Enabled
         if CONFIG.Stealth.Enabled then
@@ -267,7 +244,6 @@ local function createUI()
     CopyBtn.MouseButton1Click:Connect(function()
         local textToCopy = getConsoleText()
         if textToCopy == "" then textToCopy = "Nenhum log gerado ainda." end
-        
         if setclipboard then
             setclipboard(textToCopy)
             CopyBtn.Text = "Copiado!"
@@ -291,23 +267,20 @@ local function createUI()
     end
 end
 
--- Cria a UI e captura possíveis erros
-local success, uiReturn = pcall(createUI)
-if success then
+local successUI, uiReturn = pcall(createUI)
+if successUI then
     updateUIConsole = uiReturn
-    print("[NEXUS-7] Interface criada com sucesso.")
 else
     warn("[NEXUS-7] ERRO AO CRIAR UI: " .. tostring(uiReturn))
 end
 
 -- ============================================================================
--- 4. MÓDULO STEALTH
+-- STEALTH
 -- ============================================================================
 local Stealth = {}
 local function hasExecutor()
     return type(getrawmetatable) == "function" and type(checkcaller) == "function"
 end
-
 local function makeWritable(mt)
     if type(setreadonly) == "function" then pcall(setreadonly, mt, false) end
     if type(make_writeable) == "function" then pcall(make_writeable, mt) end
@@ -317,18 +290,14 @@ function Stealth.spoofGameMetatable()
     if not hasExecutor() then return end
     local ok, mt = pcall(getrawmetatable, game)
     if not ok or not mt then return end
-    
     local oldIndex = mt.__index
     makeWritable(mt)
-    
     mt.__index = function(self, key)
         if checkcaller() then return oldIndex(self, key) end
         if CONFIG.Stealth.Enabled then
             if key == "WalkSpeed" or key == "JumpPower" then
                 local okH, isH = pcall(function() return self:IsA("Humanoid") end)
-                if okH and isH then
-                    return key == "WalkSpeed" and CONFIG.Stealth.SpoofWalkSpeed or CONFIG.Stealth.SpoofJumpPower
-                end
+                if okH and isH then return key == "WalkSpeed" and CONFIG.Stealth.SpoofWalkSpeed or CONFIG.Stealth.SpoofJumpPower end
             elseif key == "Gravity" then
                 local okW, isW = pcall(function() return self:IsA("Workspace") end)
                 if okW and isW then return CONFIG.Stealth.SpoofGravity end
@@ -344,7 +313,6 @@ function Stealth.installGCGuard()
     if type(getgc) ~= "function" or not hasExecutor() then return end
     local ourRefs = {}
     for _, v in pairs(Stealth) do if type(v) == "function" then ourRefs[v] = true end end
-
     local original = getgc
     pcall(function()
         getgc = function(includeTables)
@@ -355,9 +323,7 @@ function Stealth.installGCGuard()
             for i, obj in pairs(all) do
                 count = count + 1
                 if count % 1000 == 0 then task.wait() end 
-                
                 if ourRefs[obj] then
-                    -- skip
                 elseif type(obj) == "function" then
                     local okInfo, info = pcall(debug.getinfo, obj)
                     if not okInfo or not info or not info.source then
@@ -365,9 +331,7 @@ function Stealth.installGCGuard()
                     else
                         local isOurs = false
                         for _, sig in ipairs(CONFIG.Stealth.SourceSignatures) do
-                            if string.find(string.lower(info.source), string.lower(sig), 1, true) then
-                                isOurs = true; break
-                            end
+                            if string.find(string.lower(info.source), string.lower(sig), 1, true) then isOurs = true; break end
                         end
                         if not isOurs then out[i] = obj end
                     end
@@ -382,17 +346,12 @@ function Stealth.installGCGuard()
 end
 
 -- ============================================================================
--- 5. MÓDULO RECON
+-- RECON
 -- ============================================================================
 local Recon = {}
-
 function Recon.findRemotes()
     local remotes, seen = {}, {}
-    local services = {
-        ReplicatedStorage, ReplicatedFirst, Workspace, Players,
-        game:GetService("StarterGui"), game:GetService("StarterPack")
-    }
-
+    local services = {ReplicatedStorage, ReplicatedFirst, Workspace, Players, game:GetService("StarterGui"), game:GetService("StarterPack")}
     for _, svc in ipairs(services) do
         local ok, desc = pcall(function() return svc:GetDescendants() end)
         if ok and desc then
@@ -401,7 +360,6 @@ function Recon.findRemotes()
                 count = count + 1
                 if count % 500 == 0 then task.wait() end 
                 if count > CONFIG.Recon.MaxDescendants then break end
-                
                 if not seen[d] and (d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent")) then
                     seen[d] = true
                     table.insert(remotes, d)
@@ -424,19 +382,23 @@ function Recon.score(remote)
 end
 
 -- ============================================================================
--- 6. GERADOR DE BASE
+-- BASE GEN (FIX: Recebe a tabela de scores externa)
 -- ============================================================================
-local function generateBase(remotes)
+local function generateBase(remotes, scores)
     local L = {"--[[ NEXUS-7 :: AUTO-GENERATED BASE ]]", ""}
     table.insert(L, "local REMOTES = {}")
     for _, r in ipairs(remotes) do
         local path, p = {}, r
-        while p and p ~= game do table.insert(path, 1, string.format('["%s"]', p.Name)); p = p.Parent end
+        while p and p ~= game do 
+            -- Usa %q para evitar que nomes com aspas quebrem o script
+            table.insert(path, 1, string.format("[%q]", p.Name)) 
+            p = p.Parent 
+        end
         local expr = "game" .. table.concat(path)
         if path[1] == '["ReplicatedStorage"]' then
             expr = "ReplicatedStorage" .. table.concat(path, "", 2)
         end
-        table.insert(L, string.format("REMOTES[%q] = %s -- score=%d", r.Name, expr, r._nexus_score or 0))
+        table.insert(L, string.format("REMOTES[%q] = %s -- score=%d", r.Name, expr, scores[r] or 0))
     end
     table.insert(L, "\nlocal function fire(name, ...)")
     table.insert(L, "    local r = REMOTES[name]")
@@ -446,44 +408,54 @@ local function generateBase(remotes)
 end
 
 -- ============================================================================
--- 7. ATIVAÇÃO PRINCIPAL
+-- ATIVAÇÃO PRINCIPAL
 -- ============================================================================
 task.spawn(function()
-    task.wait(1) -- Espera a UI carregar 100%
-    logToConsole("Iniciando varredura NEXUS-7...")
+    task.wait(1)
     
-    if CONFIG.Stealth.Enabled then
-        Stealth.spoofGameMetatable()
-        Stealth.installGCGuard()
+    -- Pcall envolvendo toda a lógica para capturar erros silenciosos
+    local success, err = pcall(function()
+        logToConsole("Iniciando varredura NEXUS-7...")
+        
+        if CONFIG.Stealth.Enabled then
+            Stealth.spoofGameMetatable()
+            Stealth.installGCGuard()
+        end
+
+        logToConsole("Escaneando remotes...")
+        local remotes = Recon.findRemotes()
+        logToConsole(string.format("Encontrados %d remotes.", #remotes))
+
+        -- FIX CRÍTICO: Armazena os scores numa tabela separada, e não nos objetos
+        local scores = {}
+        for _, r in ipairs(remotes) do
+            scores[r] = Recon.score(r)
+        end
+        
+        table.sort(remotes, function(a, b) return (scores[a] or 0) > (scores[b] or 0) end)
+
+        logToConsole("Gerando base script...")
+        local baseScript = generateBase(remotes, scores)
+        
+        logToConsole("=== INICIO DA BASE GERADA ===")
+        logToConsole(baseScript)
+        logToConsole("=== FIM DA BASE GERADA ===")
+
+        if writefile then
+            pcall(function()
+                local report = { game = game.Name, placeId = game.PlaceId, remotes = {} }
+                for _, r in ipairs(remotes) do
+                    table.insert(report.remotes, { name = r.Name, score = scores[r] or 0 })
+                end
+                writefile("nexus7_report.json", HttpService:JSONEncode(report))
+                logToConsole("Relatório JSON salvo na workspace do executor.")
+            end)
+        end
+    end)
+
+    if success then
+        logToConsole("Concluído! O jogo não travou.")
+    else
+        logToConsole("ERRO CRÍTICO: " .. tostring(err))
     end
-
-    logToConsole("Escaneando remotes...")
-    local remotes = Recon.findRemotes()
-    logToConsole(string.format("Encontrados %d remotes.", #remotes))
-
-    for _, r in ipairs(remotes) do
-        r._nexus_score = Recon.score(r)
-    end
-    
-    table.sort(remotes, function(a, b) return (a._nexus_score or 0) > (b._nexus_score or 0) end)
-
-    logToConsole("Gerando base script...")
-    local baseScript = generateBase(remotes)
-    
-    logToConsole("=== INICIO DA BASE GERADA ===")
-    logToConsole(baseScript)
-    logToConsole("=== FIM DA BASE GERADA ===")
-
-    if writefile then
-        pcall(function()
-            local report = { game = game.Name, placeId = game.PlaceId, remotes = {} }
-            for _, r in ipairs(remotes) do
-                table.insert(report.remotes, { name = r.Name, score = r._nexus_score })
-            end
-            writefile("nexus7_report.json", HttpService:JSONEncode(report))
-            logToConsole("Relatório JSON salvo na workspace do executor.")
-        end)
-    end
-
-    logToConsole("Concluído! O jogo não travou.")
 end)
