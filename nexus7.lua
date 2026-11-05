@@ -1,10 +1,11 @@
 --[[
 ================================================================================
-  NEXUS-7 :: RECON + BASE-GEN + STEALTH ENGINE (UI EDITION)
+  NEXUS-7 :: RECON + BASE-GEN + STEALTH ENGINE (UI EDITION v7.1)
   ------------------------------------------------------------------------------
   - Compatível com Celular e PC.
   - UI responsiva com Toggle, Console e Copiar.
-  - Anti-freeze: Loops pesados agora usam task.wait().
+  - Anti-freeze: Loops pesados usam task.wait().
+  - FIX: Fallback de UI (gethui -> CoreGui -> PlayerGui) para nunca falhar.
 ================================================================================
 ]]
 
@@ -17,7 +18,6 @@ local ReplicatedFirst   = game:GetService("ReplicatedFirst")
 local Workspace         = game:GetService("Workspace")
 local HttpService       = game:GetService("HttpService")
 local UserInputService  = game:GetService("UserInputService")
-local CoreGui           = game:GetService("CoreGui")
 
 local CONFIG = {
     Debug = true,
@@ -34,7 +34,7 @@ local CONFIG = {
         }
     },
     Recon = {
-        MaxDescendants = 15000, -- Reduzido para evitar travamentos
+        MaxDescendants = 15000,
         HighValueTokens = {
             "Buy", "Purchase", "Claim", "Reward", "Give", "Grant", "Add", "Set", 
             "Update", "Save", "Load", "Cash", "Coin", "Money", "Gem", "Robux", 
@@ -45,6 +45,7 @@ local CONFIG = {
 }
 
 local NEXUS_LOGS = {}
+local updateUIConsole = nil
 
 -- ============================================================================
 -- 2. SISTEMA DE LOG E CONSOLE
@@ -55,6 +56,7 @@ local function logToConsole(msg)
     local formatted = string.format("[%s] %s", timestamp, text)
     table.insert(NEXUS_LOGS, formatted)
     print("[NEXUS-7] " .. text)
+    if updateUIConsole then updateUIConsole() end
 end
 
 local function getConsoleText()
@@ -64,16 +66,37 @@ end
 -- ============================================================================
 -- 3. INTERFACE GRÁFICA (UI) - MOBILE E PC
 -- ============================================================================
+local function getSafeParent()
+    -- Tenta usar o gethui (padrão de executores modernos)
+    if type(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then return hui end
+    end
+    
+    -- Tenta o CoreGui
+    local ok, cgui = pcall(function() return game:GetService("CoreGui") end)
+    if ok and cgui then 
+        -- Testa se consegue ler (alguns jogos bloqueiam)
+        local readOk = pcall(function() return cgui.Name end)
+        if readOk then return cgui end
+    end
+    
+    -- Fallback final: PlayerGui (sempre funciona)
+    return Players.LocalPlayer:WaitForChild("PlayerGui")
+end
+
 local function createUI()
-    local oldGui = CoreGui:FindFirstChild("Nexus7Gui")
+    local parent = getSafeParent()
+    
+    local oldGui = parent:FindFirstChild("Nexus7Gui")
     if oldGui then oldGui:Destroy() end
 
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Nexus7Gui"
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.Parent = CoreGui
+    ScreenGui.Parent = parent
 
-    -- Frame Principal (Responsivo)
+    -- Frame Principal
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 220, 0, 160)
@@ -81,7 +104,7 @@ local function createUI()
     MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
-    MainFrame.Draggable = true -- Para PC
+    MainFrame.Draggable = true 
     MainFrame.Parent = ScreenGui
 
     local UICorner = Instance.new("UICorner")
@@ -103,11 +126,11 @@ local function createUI()
     TitleCorner.CornerRadius = UDim.new(0, 8)
     TitleCorner.Parent = Title
 
-    -- Botão Toggle (Ativar/Desativar Stealth)
+    -- Botão Toggle
     local ToggleBtn = Instance.new("TextButton")
     ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
     ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
-    ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80) -- Verde inicial
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
     ToggleBtn.Text = "Stealth: ON"
     ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     ToggleBtn.Font = Enum.Font.GothamSemibold
@@ -148,10 +171,10 @@ local function createUI()
     CopyCorner.CornerRadius = UDim.new(0, 4)
     CopyCorner.Parent = CopyBtn
 
-    -- Painel do Console (Oculto por padrão)
+    -- Painel do Console
     local ConsoleFrame = Instance.new("Frame")
     ConsoleFrame.Name = "ConsoleFrame"
-    ConsoleFrame.Size = UDim2.new(0.95, 0, 0, 0) -- Começa fechado
+    ConsoleFrame.Size = UDim2.new(0.95, 0, 0, 0)
     ConsoleFrame.Position = UDim2.new(0.025, 0, 0, 160)
     ConsoleFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
     ConsoleFrame.BorderSizePixel = 0
@@ -179,12 +202,12 @@ local function createUI()
     ConsoleText.TextYAlignment = Enum.TextYAlignment.Top
     ConsoleText.TextColor3 = Color3.fromRGB(200, 200, 200)
     ConsoleText.Font = Enum.Font.Code
-    ConsoleText.TextSize = 12
+    ConsoleText.TextSize = 11
     ConsoleText.TextWrapped = true
     ConsoleText.Text = "-- Console vazio --"
     ConsoleText.Parent = ScrollFrame
 
-    -- Lógica para Celular (Drag manual)
+    -- Lógica para arrastar no Celular
     local dragging, dragInput, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -245,7 +268,6 @@ local function createUI()
         local textToCopy = getConsoleText()
         if textToCopy == "" then textToCopy = "Nenhum log gerado ainda." end
         
-        -- Fallback para Copiar (Celular/PC)
         if setclipboard then
             setclipboard(textToCopy)
             CopyBtn.Text = "Copiado!"
@@ -262,22 +284,24 @@ local function createUI()
         end
     end)
 
-    return function(msg) -- Update console function
-        ConsoleText.Text = getConsoleText()
+    return function()
+        if consoleOpen then
+            ConsoleText.Text = getConsoleText()
+        end
     end
 end
 
-local updateUIConsole = createUI()
-
--- Substitui a função de log para atualizar a UI
-local originalLog = logToConsole
-logToConsole = function(msg)
-    originalLog(msg)
-    updateUIConsole()
+-- Cria a UI e captura possíveis erros
+local success, uiReturn = pcall(createUI)
+if success then
+    updateUIConsole = uiReturn
+    print("[NEXUS-7] Interface criada com sucesso.")
+else
+    warn("[NEXUS-7] ERRO AO CRIAR UI: " .. tostring(uiReturn))
 end
 
 -- ============================================================================
--- 4. MÓDULO STEALTH (OTIMIZADO PARA NÃO TRAVAR)
+-- 4. MÓDULO STEALTH
 -- ============================================================================
 local Stealth = {}
 local function hasExecutor()
@@ -330,7 +354,7 @@ function Stealth.installGCGuard()
             local count = 0
             for i, obj in pairs(all) do
                 count = count + 1
-                if count % 1000 == 0 then task.wait() end -- ANTI-FREEZE
+                if count % 1000 == 0 then task.wait() end 
                 
                 if ourRefs[obj] then
                     -- skip
@@ -358,7 +382,7 @@ function Stealth.installGCGuard()
 end
 
 -- ============================================================================
--- 5. MÓDULO RECON (OTIMIZADO E ASSÍNCRONO)
+-- 5. MÓDULO RECON
 -- ============================================================================
 local Recon = {}
 
@@ -375,7 +399,7 @@ function Recon.findRemotes()
             local count = 0
             for _, d in ipairs(desc) do
                 count = count + 1
-                if count % 500 == 0 then task.wait() end -- ANTI-FREEZE
+                if count % 500 == 0 then task.wait() end 
                 if count > CONFIG.Recon.MaxDescendants then break end
                 
                 if not seen[d] and (d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent")) then
@@ -422,17 +446,18 @@ local function generateBase(remotes)
 end
 
 -- ============================================================================
--- 7. ATIVAÇÃO PRINCIPAL (TASK.SPAWN PARA NÃO TRAVAR A UI)
+-- 7. ATIVAÇÃO PRINCIPAL
 -- ============================================================================
 task.spawn(function()
-    logToConsole("Iniciando NEXUS-7...")
+    task.wait(1) -- Espera a UI carregar 100%
+    logToConsole("Iniciando varredura NEXUS-7...")
     
     if CONFIG.Stealth.Enabled then
         Stealth.spoofGameMetatable()
         Stealth.installGCGuard()
     end
 
-    logToConsole("Escaneando remotes... (isso pode demorar um pouco)")
+    logToConsole("Escaneando remotes...")
     local remotes = Recon.findRemotes()
     logToConsole(string.format("Encontrados %d remotes.", #remotes))
 
@@ -445,12 +470,10 @@ task.spawn(function()
     logToConsole("Gerando base script...")
     local baseScript = generateBase(remotes)
     
-    -- Salva a base no console para copiar
     logToConsole("=== INICIO DA BASE GERADA ===")
     logToConsole(baseScript)
     logToConsole("=== FIM DA BASE GERADA ===")
 
-    -- Salva o JSON se suportado
     if writefile then
         pcall(function()
             local report = { game = game.Name, placeId = game.PlaceId, remotes = {} }
@@ -462,5 +485,5 @@ task.spawn(function()
         end)
     end
 
-    logToConsole("Concluído com sucesso! O jogo não travou.")
+    logToConsole("Concluído! O jogo não travou.")
 end)
