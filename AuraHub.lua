@@ -1,16 +1,14 @@
 -- ============================================================
---  AURA HUB  |  Interface moderna com detalhes de aura
---  Biblioteca: LinoriaLib (UI)
---  Recursos: ESP, Aimbot, Fly, Speed, Jump, Noclip, Kill Aura
+--  AURA HUB MOBILE  |  Interface moderna com aura
+--  Compatível com celular (Delta, Arceus X, Fluxus Mobile)
+--  Compatível com PC (fallback automático)
 -- ============================================================
 
--- Carregamento da biblioteca de interface
 local repo = 'https://raw.githubusercontent.com/Progoonerfrfr/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
--- Serviços
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -18,20 +16,22 @@ local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
+-- Detecção de plataforma
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
 -- ============================================================
 --  JANELA PRINCIPAL
 -- ============================================================
 local Window = Library:CreateWindow({
-    Title = 'Aura Hub',
+    Title = 'Aura Hub' .. (isMobile and ' [Mobile]' or ''),
     Center = true,
     AutoShow = true,
     TabPadding = 8,
     MenuFadeTime = 0.2,
 })
 
--- Abas
 local Tabs = {
-    Main = Window:AddTab('Principal'),
+    Main = Window:AddTab('Aura'),
     Combat = Window:AddTab('Combate'),
     Visuals = Window:AddTab('Visual'),
     Movement = Window:AddTab('Movimento'),
@@ -40,16 +40,49 @@ local Tabs = {
 }
 
 -- ============================================================
---  ABA PRINCIPAL (Aura do Personagem)
+--  BOTÃO FLUTUANTE PARA ABRIR/FECHAR MENU (MOBILE)
+-- ============================================================
+if isMobile then
+    local menuBtnGui = Instance.new("ScreenGui")
+    menuBtnGui.Name = "AuraMenuBtn"
+    menuBtnGui.ResetOnSpawn = false
+    pcall(function() menuBtnGui.Parent = game:GetService("CoreGui") end)
+    if not menuBtnGui.Parent then menuBtnGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+    local menuBtn = Instance.new("TextButton")
+    menuBtn.Size = UDim2.new(0, 50, 0, 50)
+    menuBtn.Position = UDim2.new(0, 10, 0, 10)
+    menuBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+    menuBtn.TextColor3 = Color3.fromRGB(0, 255, 255)
+    menuBtn.Text = "AH"
+    menuBtn.Font = Enum.Font.GothamBold
+    menuBtn.TextSize = 20
+    menuBtn.BorderSizePixel = 0
+    menuBtn.Parent = menuBtnGui
+
+    local c = Instance.new("UICorner", menuBtn); c.CornerRadius = UDim.new(1, 0)
+    local s = Instance.new("UIStroke", menuBtn); s.Color = Color3.fromRGB(0, 255, 255); s.Thickness = 2
+
+    menuBtn.MouseButton1Click:Connect(function()
+        local ok = pcall(function() Library:Toggle() end)
+        if not ok then
+            pcall(function()
+                Library.Open = not Library.Open
+                Library:Update()
+            end)
+        end
+    end)
+end
+
+-- ============================================================
+--  ABA AURA
 -- ============================================================
 local MainLeft = Tabs.Main:AddLeftGroupbox('Aura do Jogador')
 local MainRight = Tabs.Main:AddRightGroupbox('Aura Global')
 
--- Aura local (partículas ao redor do personagem)
-local auraActive = false
 local auraPart = nil
 
-local function createAura()
+local function createAura(color)
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild('HumanoidRootPart')
@@ -64,79 +97,60 @@ local function createAura()
     auraPart.Parent = char
     auraPart.CFrame = hrp.CFrame
 
-    local attachment = Instance.new('Attachment', auraPart)
-    attachment.Position = Vector3.new(0, 0, 0)
-
-    local particle = Instance.new('ParticleEmitter', attachment)
-    particle.Texture = 'rbxassetid://243660364' -- textura de brilho
-    particle.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 0, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 255)),
-    })
-    particle.Size = NumberSequence.new({
+    local att = Instance.new('Attachment', auraPart)
+    local pe = Instance.new('ParticleEmitter', att)
+    pe.Texture = 'rbxassetid://243660364'
+    pe.Color = ColorSequence.new(color)
+    pe.Size = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 0),
         NumberSequenceKeypoint.new(0.5, 2),
         NumberSequenceKeypoint.new(1, 0),
     })
-    particle.Transparency = NumberSequence.new({
+    pe.Transparency = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 1),
         NumberSequenceKeypoint.new(0.2, 0.2),
         NumberSequenceKeypoint.new(1, 1),
     })
-    particle.Lifetime = NumberRange.new(0.8, 1.5)
-    particle.Rate = 20
-    particle.Speed = NumberRange.new(1, 3)
-    particle.SpreadAngle = Vector2.new(180, 180)
-    particle.Rotation = NumberRange.new(0, 360)
+    pe.Lifetime = NumberRange.new(0.8, 1.5)
+    pe.Rate = 20
+    pe.Speed = NumberRange.new(1, 3)
+    pe.SpreadAngle = Vector2.new(180, 180)
+    pe.Rotation = NumberRange.new(0, 360)
 
     RunService.RenderStepped:Connect(function()
-        if auraPart and auraPart.Parent then
+        if auraPart and auraPart.Parent and hrp.Parent then
             auraPart.CFrame = hrp.CFrame
         end
     end)
 end
 
 local function removeAura()
-    if auraPart then
-        auraPart:Destroy()
-        auraPart = nil
-    end
+    if auraPart then auraPart:Destroy() auraPart = nil end
 end
+
+local auraColor = Color3.fromRGB(0, 255, 255)
 
 MainLeft:AddToggle('AuraLocal', {
     Text = 'Aura Pessoal (Partículas)',
     Default = false,
-    Tooltip = 'Ativa uma aura de partículas coloridas ao redor do seu personagem',
     Callback = function(v)
-        auraActive = v
-        if v then
-            createAura()
-        else
-            removeAura()
-        end
+        if v then createAura(auraColor) else removeAura() end
     end,
 })
 
--- Cor da aura (color picker)
-local auraColor = Color3.fromRGB(0, 255, 255)
 MainLeft:AddLabel('Cor da Aura'):AddColorPicker('AuraColor', {
     Default = auraColor,
     Title = 'Escolha a cor da aura',
-    Transparency = 0,
     Callback = function(color)
         auraColor = color
         if auraPart then
-            local particle = auraPart:FindFirstChildOfClass('Attachment') and auraPart:FindFirstChildOfClass('Attachment'):FindFirstChildOfClass('ParticleEmitter')
-            if particle then
-                particle.Color = ColorSequence.new(color)
-            end
+            local att = auraPart:FindFirstChildOfClass('Attachment')
+            local pe = att and att:FindFirstChildOfClass('ParticleEmitter')
+            if pe then pe.Color = ColorSequence.new(color) end
         end
     end,
 })
 
--- Aura global (todos os jogadores)
-local globalAura = false
 local function applyGlobalAura()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
@@ -150,7 +164,6 @@ local function applyGlobalAura()
                 part.Massless = true
                 part.Parent = plr.Character
                 part.CFrame = hrp.CFrame
-
                 local att = Instance.new('Attachment', part)
                 local pe = Instance.new('ParticleEmitter', att)
                 pe.Texture = 'rbxassetid://243660364'
@@ -161,9 +174,8 @@ local function applyGlobalAura()
                 pe.Rate = 15
                 pe.Speed = NumberRange.new(0.5, 2)
                 pe.SpreadAngle = Vector2.new(180, 180)
-
                 RunService.RenderStepped:Connect(function()
-                    if part and part.Parent then
+                    if part and part.Parent and hrp.Parent then
                         part.CFrame = hrp.CFrame
                     end
                 end)
@@ -175,64 +187,62 @@ end
 local function removeGlobalAura()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr.Character then
-            local aura = plr.Character:FindFirstChild('GlobalAura')
-            if aura then aura:Destroy() end
+            local a = plr.Character:FindFirstChild('GlobalAura')
+            if a then a:Destroy() end
         end
     end
 end
 
 MainRight:AddToggle('GlobalAura', {
-    Text = 'Aura Global (Todos os Jogadores)',
+    Text = 'Aura Global (Todos)',
     Default = false,
-    Tooltip = 'Aplica uma aura visual em todos os jogadores',
     Callback = function(v)
-        globalAura = v
-        if v then
-            applyGlobalAura()
-        else
-            removeGlobalAura()
-        end
+        if v then applyGlobalAura() else removeGlobalAura() end
     end,
 })
 
 -- ============================================================
---  ABA COMBATE (Aimbot & Kill Aura)
+--  ABA COMBATE (Aimbot Mobile)
 -- ============================================================
 local CombatLeft = Tabs.Combat:AddLeftGroupbox('Aimbot')
 local CombatRight = Tabs.Combat:AddRightGroupbox('Kill Aura')
 
--- Aimbot
 local aimbotEnabled = false
-local aimbotFOV = 120
-local aimbotSmoothness = 0.2
+local aimbotFOV = isMobile and 180 or 120
+local aimbotSmoothness = isMobile and 0.35 or 0.2
 local aimbotPart = 'Head'
-local target = nil
 
 local fovCircle = Drawing.new('Circle')
 fovCircle.Visible = false
-fovCircle.Thickness = 1
+fovCircle.Thickness = 2
 fovCircle.NumSides = 64
 fovCircle.Radius = aimbotFOV
 fovCircle.Filled = false
-fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Color = Color3.fromRGB(0, 255, 255)
 fovCircle.Transparency = 0.6
 
-local function getClosestPlayer()
-    local closest = nil
-    local shortest = math.huge
-    local mousePos = UserInputService:GetMouseLocation()
+local function getReferencePoint()
+    if isMobile then
+        local vp = Camera.ViewportSize
+        return Vector2.new(vp.X / 2, vp.Y / 2)
+    else
+        return UserInputService:GetMouseLocation()
+    end
+end
 
+local function getClosestPlayer()
+    local closest, shortest = nil, math.huge
+    local ref = getReferencePoint()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
             local hum = plr.Character:FindFirstChildOfClass('Humanoid')
             local part = plr.Character:FindFirstChild(aimbotPart)
             if hum and hum.Health > 0 and part then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
                 if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    local dist = (Vector2.new(sp.X, sp.Y) - ref).Magnitude
                     if dist < shortest and dist <= aimbotFOV then
-                        shortest = dist
-                        closest = plr
+                        shortest, closest = dist, plr
                     end
                 end
             end
@@ -241,31 +251,21 @@ local function getClosestPlayer()
     return closest
 end
 
-local function aimAt(plr)
-    if not plr or not plr.Character then return end
-    local part = plr.Character:FindFirstChild(aimbotPart)
-    if not part then return end
-
-    local targetPos = part.Position
-    local camPos = Camera.CFrame.Position
-    local direction = (targetPos - camPos).Unit
-
-    local currentCFrame = Camera.CFrame
-    local targetCFrame = CFrame.new(camPos, camPos + direction)
-    Camera.CFrame = currentCFrame:Lerp(targetCFrame, aimbotSmoothness)
-end
-
 RunService.RenderStepped:Connect(function()
     if aimbotEnabled then
-        local mousePos = UserInputService:GetMouseLocation()
-        fovCircle.Position = mousePos
+        fovCircle.Position = getReferencePoint()
         fovCircle.Radius = aimbotFOV
         fovCircle.Visible = true
-        fovCircle.Color = Color3.fromRGB(0, 255, 255)
 
-        local closest = getClosestPlayer()
-        if closest then
-            aimAt(closest)
+        local t = getClosestPlayer()
+        if t and t.Character then
+            local part = t.Character:FindFirstChild(aimbotPart)
+            if part then
+                local camPos = Camera.CFrame.Position
+                local dir = (part.Position - camPos).Unit
+                local targetCF = CFrame.new(camPos, camPos + dir)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCF, aimbotSmoothness)
+            end
         end
     else
         fovCircle.Visible = false
@@ -275,27 +275,21 @@ end)
 CombatLeft:AddToggle('AimbotEnabled', {
     Text = 'Aimbot',
     Default = false,
-    Tooltip = 'Ativa a mira automática no jogador mais próximo',
+    Tooltip = 'Mira automática no jogador mais próximo do centro',
     Callback = function(v) aimbotEnabled = v end,
 })
 
 CombatLeft:AddSlider('AimbotFOV', {
-    Text = 'FOV (Campo de Visão)',
-    Default = 120,
-    Min = 10,
-    Max = 500,
-    Rounding = 0,
-    Suffix = 'px',
+    Text = 'FOV',
+    Default = aimbotFOV,
+    Min = 10, Max = 500, Rounding = 0, Suffix = 'px',
     Callback = function(v) aimbotFOV = v end,
 })
 
 CombatLeft:AddSlider('AimbotSmooth', {
     Text = 'Suavidade',
-    Default = 0.2,
-    Min = 0.01,
-    Max = 1,
-    Rounding = 2,
-    Suffix = '',
+    Default = aimbotSmoothness,
+    Min = 0.02, Max = 1, Rounding = 2,
     Callback = function(v) aimbotSmoothness = v end,
 })
 
@@ -306,64 +300,43 @@ CombatLeft:AddDropdown('AimbotPart', {
     Callback = function(v) aimbotPart = v end,
 })
 
--- Kill Aura
+-- Kill Aura (ativa tool automaticamente)
 local killAuraEnabled = false
 local killAuraRange = 20
 
-local function killAura()
+RunService.Heartbeat:Connect(function()
     if not killAuraEnabled then return end
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild('HumanoidRootPart')
     if not hrp then return end
+    local tool = char:FindFirstChildOfClass('Tool')
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
             local hum = plr.Character:FindFirstChildOfClass('Humanoid')
-            local targetHrp = plr.Character:FindFirstChild('HumanoidRootPart')
-            if hum and hum.Health > 0 and targetHrp then
-                local dist = (hrp.Position - targetHrp.Position).Magnitude
-                if dist <= killAuraRange then
-                    -- Dano direto via ferramenta (se existir) ou toque
-                    local tool = char:FindFirstChildOfClass('Tool')
+            local thrp = plr.Character:FindFirstChild('HumanoidRootPart')
+            if hum and hum.Health > 0 and thrp then
+                if (hrp.Position - thrp.Position).Magnitude <= killAuraRange then
                     if tool then
-                        tool:Activate()
+                        pcall(function() tool:Activate() end)
                     end
-                    -- Dano por toque (simulação)
-                    local explosion = Instance.new('Explosion')
-                    explosion.Position = targetHrp.Position
-                    explosion.BlastRadius = 2
-                    explosion.BlastPressure = 0
-                    explosion.DestroyJointRadiusPercent = 0
-                    explosion.Parent = workspace
-                    task.wait(0.1)
-                    explosion:Destroy()
                 end
             end
         end
-    end
-end
-
-RunService.Heartbeat:Connect(function()
-    if killAuraEnabled then
-        killAura()
     end
 end)
 
 CombatRight:AddToggle('KillAura', {
     Text = 'Kill Aura',
     Default = false,
-    Tooltip = 'Ataca automaticamente jogadores próximos',
+    Tooltip = 'Ativa ferramentas automaticamente perto de jogadores',
     Callback = function(v) killAuraEnabled = v end,
 })
 
 CombatRight:AddSlider('KillAuraRange', {
     Text = 'Alcance',
-    Default = 20,
-    Min = 5,
-    Max = 100,
-    Rounding = 0,
-    Suffix = 'studs',
+    Default = 20, Min = 5, Max = 100, Rounding = 0, Suffix = 'studs',
     Callback = function(v) killAuraRange = v end,
 })
 
@@ -371,78 +344,66 @@ CombatRight:AddSlider('KillAuraRange', {
 --  ABA VISUAL (ESP)
 -- ============================================================
 local VisualsLeft = Tabs.Visuals:AddLeftGroupbox('ESP')
-local VisualsRight = Tabs.Visuals:AddRightGroupbox('Configurações ESP')
+local VisualsRight = Tabs.Visuals:AddRightGroupbox('Configurações')
 
 local espEnabled = false
-local espBoxes = {}
-local espNames = {}
+local espBoxes, espNames = {}, {}
 
 local function createESP(plr)
     if plr == LocalPlayer then return end
-    local char = plr.Character
-    if not char then return end
-    local hrp = char:FindFirstChild('HumanoidRootPart')
-    if not hrp then return end
-
-    -- Caixa
-    local box = Drawing.new('Square')
+    if espBoxes[plr] then return end
+    local okBox, box = pcall(function() return Drawing.new('Square') end)
+    local okTxt, txt = pcall(function() return Drawing.new('Text') end)
+    if not okBox or not okTxt then return end
     box.Thickness = 2
     box.Color = Color3.fromRGB(0, 255, 255)
     box.Filled = false
     box.Visible = false
     espBoxes[plr] = box
-
-    -- Nome
-    local name = Drawing.new('Text')
-    name.Size = 16
-    name.Color = Color3.fromRGB(255, 255, 255)
-    name.Center = true
-    name.Outline = true
-    name.Visible = false
-    espNames[plr] = name
+    txt.Size = 14
+    txt.Color = Color3.fromRGB(255, 255, 255)
+    txt.Center = true
+    txt.Outline = true
+    txt.Visible = false
+    espNames[plr] = txt
 end
 
-local function updateESP()
+RunService.RenderStepped:Connect(function()
     for plr, box in pairs(espBoxes) do
-        if not espEnabled or not plr.Character then
-            box.Visible = false
-            if espNames[plr] then espNames[plr].Visible = false end
-        else
-            local char = plr.Character
-            local hrp = char:FindFirstChild('HumanoidRootPart')
-            local head = char:FindFirstChild('Head')
+        local visible = false
+        if espEnabled and plr.Character then
+            local hrp = plr.Character:FindFirstChild('HumanoidRootPart')
+            local head = plr.Character:FindFirstChild('Head')
             if hrp and head then
-                local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
-                local rootPos, _ = Camera:WorldToViewportPoint(hrp.Position)
-
+                local hp, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+                local rp = Camera:WorldToViewportPoint(hrp.Position)
                 if onScreen then
-                    local height = math.abs(headPos.Y - rootPos.Y) * 2
-                    local width = height * 0.6
-                    box.Size = Vector2.new(width, height)
-                    box.Position = Vector2.new(headPos.X - width / 2, headPos.Y)
+                    local h = math.abs(hp.Y - rp.Y) * 2
+                    local w = h * 0.6
+                    box.Size = Vector2.new(w, h)
+                    box.Position = Vector2.new(hp.X - w / 2, hp.Y)
                     box.Visible = true
-
+                    visible = true
                     if espNames[plr] then
-                        local dist = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart') and (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude) or 0
+                        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
+                        local dist = myHrp and (myHrp.Position - hrp.Position).Magnitude or 0
                         espNames[plr].Text = string.format('%s [%d]', plr.Name, math.floor(dist))
-                        espNames[plr].Position = Vector2.new(headPos.X, headPos.Y - 20)
+                        espNames[plr].Position = Vector2.new(hp.X, hp.Y - 18)
                         espNames[plr].Visible = true
                     end
-                else
-                    box.Visible = false
-                    if espNames[plr] then espNames[plr].Visible = false end
                 end
             end
         end
+        if not visible then
+            box.Visible = false
+            if espNames[plr] then espNames[plr].Visible = false end
+        end
     end
-end
-
-RunService.RenderStepped:Connect(updateESP)
+end)
 
 VisualsLeft:AddToggle('ESP', {
     Text = 'ESP (Caixas e Nomes)',
     Default = false,
-    Tooltip = 'Mostra caixas e nomes sobre os jogadores',
     Callback = function(v)
         espEnabled = v
         if v then
@@ -450,129 +411,93 @@ VisualsLeft:AddToggle('ESP', {
                 if plr ~= LocalPlayer then createESP(plr) end
             end
         else
-            for _, box in pairs(espBoxes) do box.Visible = false end
-            for _, name in pairs(espNames) do name.Visible = false end
+            for _, b in pairs(espBoxes) do b.Visible = false end
+            for _, n in pairs(espNames) do n.Visible = false end
         end
     end,
 })
 
--- Atualizar ESP quando novos jogadores entrarem
 Players.PlayerAdded:Connect(function(plr)
-    if espEnabled then
-        plr.CharacterAdded:Connect(function()
-            task.wait(1)
-            createESP(plr)
-        end)
-    end
+    plr.CharacterAdded:Connect(function()
+        task.wait(1)
+        if espEnabled then createESP(plr) end
+    end)
 end)
 
--- Cor do ESP
 VisualsRight:AddLabel('Cor do ESP'):AddColorPicker('ESPColor', {
     Default = Color3.fromRGB(0, 255, 255),
     Title = 'Cor da caixa',
     Callback = function(color)
-        for _, box in pairs(espBoxes) do
-            box.Color = color
-        end
+        for _, b in pairs(espBoxes) do b.Color = color end
     end,
 })
 
 -- ============================================================
---  ABA MOVIMENTO (Fly, Speed, Jump, Noclip)
+--  ABA MOVIMENTO
 -- ============================================================
 local MoveLeft = Tabs.Movement:AddLeftGroupbox('Movimento')
 local MoveRight = Tabs.Movement:AddRightGroupbox('Voo')
 
 -- Speed
-local speedEnabled = false
-local speedValue = 50
-
+local speedEnabled, speedValue = false, 50
 MoveLeft:AddToggle('SpeedToggle', {
-    Text = 'Speed Hack',
-    Default = false,
+    Text = 'Speed Hack', Default = false,
     Callback = function(v)
         speedEnabled = v
         local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass('Humanoid')
-            if hum then
-                hum.WalkSpeed = v and speedValue or 16
-            end
-        end
+        local hum = char and char:FindFirstChildOfClass('Humanoid')
+        if hum then hum.WalkSpeed = v and speedValue or 16 end
     end,
 })
-
 MoveLeft:AddSlider('SpeedValue', {
-    Text = 'Velocidade',
-    Default = 50,
-    Min = 16,
-    Max = 300,
-    Rounding = 0,
+    Text = 'Velocidade', Default = 50, Min = 16, Max = 300, Rounding = 0,
     Callback = function(v)
         speedValue = v
         if speedEnabled then
             local char = LocalPlayer.Character
-            if char then
-                local hum = char:FindFirstChildOfClass('Humanoid')
-                if hum then hum.WalkSpeed = v end
-            end
+            local hum = char and char:FindFirstChildOfClass('Humanoid')
+            if hum then hum.WalkSpeed = v end
         end
     end,
 })
 
 -- Jump
-local jumpEnabled = false
-local jumpValue = 100
-
+local jumpEnabled, jumpValue = false, 100
 MoveLeft:AddToggle('JumpToggle', {
-    Text = 'Jump Power',
-    Default = false,
+    Text = 'Jump Power', Default = false,
     Callback = function(v)
         jumpEnabled = v
         local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass('Humanoid')
-            if hum then
-                hum.UseJumpPower = true
-                hum.JumpPower = v and jumpValue or 50
-            end
+        local hum = char and char:FindFirstChildOfClass('Humanoid')
+        if hum then
+            hum.UseJumpPower = true
+            hum.JumpPower = v and jumpValue or 50
         end
     end,
 })
-
 MoveLeft:AddSlider('JumpValue', {
-    Text = 'Força do Salto',
-    Default = 100,
-    Min = 50,
-    Max = 500,
-    Rounding = 0,
+    Text = 'Força do Salto', Default = 100, Min = 50, Max = 500, Rounding = 0,
     Callback = function(v)
         jumpValue = v
         if jumpEnabled then
             local char = LocalPlayer.Character
-            if char then
-                local hum = char:FindFirstChildOfClass('Humanoid')
-                if hum then hum.JumpPower = v end
-            end
+            local hum = char and char:FindFirstChildOfClass('Humanoid')
+            if hum then hum.JumpPower = v end
         end
     end,
 })
 
--- Infinite Jump
+-- Infinite Jump (works with mobile jump button)
 local infJumpEnabled = false
 UserInputService.JumpRequest:Connect(function()
     if infJumpEnabled then
         local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass('Humanoid')
-            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-        end
+        local hum = char and char:FindFirstChildOfClass('Humanoid')
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
     end
 end)
-
 MoveLeft:AddToggle('InfJump', {
-    Text = 'Salto Infinito',
-    Default = false,
+    Text = 'Salto Infinito', Default = false,
     Callback = function(v) infJumpEnabled = v end,
 })
 
@@ -582,74 +507,121 @@ RunService.Stepped:Connect(function()
     if noclipEnabled then
         local char = LocalPlayer.Character
         if char then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA('BasePart') then
-                    part.CanCollide = false
-                end
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA('BasePart') then p.CanCollide = false end
             end
         end
     end
 end)
-
 MoveLeft:AddToggle('Noclip', {
-    Text = 'Noclip',
-    Default = false,
+    Text = 'Noclip', Default = false,
     Callback = function(v) noclipEnabled = v end,
 })
 
--- Fly
-local flyEnabled = false
-local flySpeed = 50
-local flyBV = nil
-local flyBG = nil
-local flyConn = nil
+-- ============================================================
+--  FLY (com botões mobile)
+-- ============================================================
+local flyEnabled, flySpeed = false, 50
+local flyBV, flyBG, flyConn = nil, nil, nil
+local controls = {f=0, b=0, l=0, r=0, u=0, d=0}
+local flyButtonsGui = nil
+
+local function createFlyButtons()
+    if flyButtonsGui then flyButtonsGui:Destroy() end
+    flyButtonsGui = Instance.new("ScreenGui")
+    flyButtonsGui.Name = "AuraFlyGui"
+    flyButtonsGui.ResetOnSpawn = false
+    pcall(function() flyButtonsGui.Parent = game:GetService("CoreGui") end)
+    if not flyButtonsGui.Parent then flyButtonsGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+    local function makeBtn(text, pos, key)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 55, 0, 55)
+        btn.Position = pos
+        btn.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+        btn.BackgroundTransparency = 0.4
+        btn.TextColor3 = Color3.fromRGB(0, 255, 255)
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 22
+        btn.BorderSizePixel = 0
+        btn.Parent = flyButtonsGui
+        local c = Instance.new("UICorner", btn); c.CornerRadius = UDim.new(0, 12)
+        local s = Instance.new("UIStroke", btn); s.Color = Color3.fromRGB(0, 255, 255); s.Thickness = 2
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+                or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                controls[key] = 1
+            end
+        end)
+        btn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch
+                or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                controls[key] = 0
+            end
+        end)
+    end
+
+    -- Layout em cruz no canto inferior esquerdo
+    makeBtn("↑", UDim2.new(0, 75, 1, -275), "u")
+    makeBtn("W", UDim2.new(0, 75, 1, -215), "f")
+    makeBtn("A", UDim2.new(0, 15, 1, -215), "l")
+    makeBtn("S", UDim2.new(0, 75, 1, -155), "b")
+    makeBtn("D", UDim2.new(0, 135, 1, -215), "r")
+    makeBtn("↓", UDim2.new(0, 75, 1, -95), "d")
+end
+
+local function destroyFlyButtons()
+    if flyButtonsGui then flyButtonsGui:Destroy() flyButtonsGui = nil end
+    controls.f = 0 controls.b = 0 controls.l = 0 controls.r = 0 controls.u = 0 controls.d = 0
+end
 
 local function enableFly()
     local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild('HumanoidRootPart')
+    local hrp = char and char:FindFirstChild('HumanoidRootPart')
     if not hrp then return end
-
     flyBV = Instance.new('BodyVelocity')
     flyBV.MaxForce = Vector3.new(1e5, 1e5, 1e5)
     flyBV.Velocity = Vector3.zero
     flyBV.Parent = hrp
-
     flyBG = Instance.new('BodyGyro')
     flyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
-    flyBG.P = 1000
-    flyBG.D = 50
+    flyBG.P = 1000 flyBG.D = 50
     flyBG.Parent = hrp
 
-    local controls = {f=0, b=0, l=0, r=0, u=0, d=0}
-    UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-        if input.KeyCode == Enum.KeyCode.W then controls.f = 1 end
-        if input.KeyCode == Enum.KeyCode.S then controls.b = -1 end
-        if input.KeyCode == Enum.KeyCode.A then controls.l = -1 end
-        if input.KeyCode == Enum.KeyCode.D then controls.r = 1 end
-        if input.KeyCode == Enum.KeyCode.E then controls.u = 1 end
-        if input.KeyCode == Enum.KeyCode.Q then controls.d = -1 end
-    end)
-    UserInputService.InputEnded:Connect(function(input, gpe)
-        if gpe then return end
-        if input.KeyCode == Enum.KeyCode.W then controls.f = 0 end
-        if input.KeyCode == Enum.KeyCode.S then controls.b = 0 end
-        if input.KeyCode == Enum.KeyCode.A then controls.l = 0 end
-        if input.KeyCode == Enum.KeyCode.D then controls.r = 0 end
-        if input.KeyCode == Enum.KeyCode.E then controls.u = 0 end
-        if input.KeyCode == Enum.KeyCode.Q then controls.d = 0 end
-    end)
+    if isMobile then
+        createFlyButtons()
+    else
+        UserInputService.InputBegan:Connect(function(input, gpe)
+            if gpe then return end
+            if input.KeyCode == Enum.KeyCode.W then controls.f = 1 end
+            if input.KeyCode == Enum.KeyCode.S then controls.b = -1 end
+            if input.KeyCode == Enum.KeyCode.A then controls.l = -1 end
+            if input.KeyCode == Enum.KeyCode.D then controls.r = 1 end
+            if input.KeyCode == Enum.KeyCode.E then controls.u = 1 end
+            if input.KeyCode == Enum.KeyCode.Q then controls.d = -1 end
+        end)
+        UserInputService.InputEnded:Connect(function(input, gpe)
+            if gpe then return end
+            if input.KeyCode == Enum.KeyCode.W then controls.f = 0 end
+            if input.KeyCode == Enum.KeyCode.S then controls.b = 0 end
+            if input.KeyCode == Enum.KeyCode.A then controls.l = 0 end
+            if input.KeyCode == Enum.KeyCode.D then controls.r = 0 end
+            if input.KeyCode == Enum.KeyCode.E then controls.u = 0 end
+            if input.KeyCode == Enum.KeyCode.Q then controls.d = 0 end
+        end)
+    end
 
     flyConn = RunService.RenderStepped:Connect(function()
         if flyEnabled and hrp and hrp.Parent then
             local camCF = Camera.CFrame
-            local moveDir = (camCF.LookVector * controls.f + camCF.RightVector * controls.r + Vector3.new(0, controls.u, 0))
-            if moveDir.Magnitude > 0 then
-                flyBV.Velocity = moveDir.Unit * flySpeed
-            else
-                flyBV.Velocity = Vector3.zero
-            end
+            local dir = camCF.LookVector * controls.f
+                      + camCF.RightVector * controls.r
+                      + camCF.LookVector * -controls.b
+                      + camCF.RightVector * -controls.l
+                      + Vector3.new(0, controls.u, 0)
+                      + Vector3.new(0, -controls.d, 0)
+            flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.zero
             flyBG.CFrame = camCF
         end
     end)
@@ -659,15 +631,13 @@ local function disableFly()
     if flyBV then flyBV:Destroy() end
     if flyBG then flyBG:Destroy() end
     if flyConn then flyConn:Disconnect() end
-    flyBV = nil
-    flyBG = nil
-    flyConn = nil
+    flyBV, flyBG, flyConn = nil, nil, nil
+    destroyFlyButtons()
 end
 
 MoveRight:AddToggle('FlyToggle', {
-    Text = 'Fly (Voo)',
-    Default = false,
-    Tooltip = 'Ative e use WASD + Q/E para voar',
+    Text = 'Fly (Voo)', Default = false,
+    Tooltip = isMobile and 'Use os botões na tela para voar' or 'Use WASD + Q/E',
     Callback = function(v)
         flyEnabled = v
         if v then enableFly() else disableFly() end
@@ -675,84 +645,58 @@ MoveRight:AddToggle('FlyToggle', {
 })
 
 MoveRight:AddSlider('FlySpeed', {
-    Text = 'Velocidade do Voo',
-    Default = 50,
-    Min = 10,
-    Max = 300,
-    Rounding = 0,
+    Text = 'Velocidade do Voo', Default = 50, Min = 10, Max = 300, Rounding = 0,
     Callback = function(v) flySpeed = v end,
 })
 
 -- ============================================================
---  ABA DIVERSOS (Teleporte, etc.)
+--  ABA DIVERSOS
 -- ============================================================
 local MiscLeft = Tabs.Misc:AddLeftGroupbox('Teleporte')
 local MiscRight = Tabs.Misc:AddRightGroupbox('Jogadores')
 
--- Teleporte para jogador
-local selectedPlayer = nil
 local playerList = {}
 for _, plr in ipairs(Players:GetPlayers()) do
-    if plr ~= LocalPlayer then
-        table.insert(playerList, plr.Name)
-    end
+    if plr ~= LocalPlayer then table.insert(playerList, plr.Name) end
 end
+if #playerList == 0 then playerList = {'(vazio)'} end
 
 MiscLeft:AddDropdown('TPPlayer', {
-    Text = 'Jogador',
-    Values = playerList,
-    Default = 1,
-    Callback = function(v) selectedPlayer = v end,
+    Text = 'Jogador', Values = playerList, Default = 1,
+    Callback = function(v) _G.selectedPlayer = v end,
 })
 
 MiscLeft:AddButton('Teleportar para Jogador', function()
-    if selectedPlayer then
-        local targetPlr = Players:FindFirstChild(selectedPlayer)
-        if targetPlr and targetPlr.Character then
-            local hrp = targetPlr.Character:FindFirstChild('HumanoidRootPart')
-            if hrp and LocalPlayer.Character then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = hrp.CFrame + Vector3.new(0, 3, 0)
-            end
+    local target = _G.selectedPlayer and Players:FindFirstChild(_G.selectedPlayer)
+    if target and target.Character and LocalPlayer.Character then
+        local thrp = target.Character:FindFirstChild('HumanoidRootPart')
+        local lhrp = LocalPlayer.Character:FindFirstChild('HumanoidRootPart')
+        if thrp and lhrp then
+            lhrp.CFrame = thrp.CFrame + Vector3.new(0, 3, 0)
         end
     end
 end)
 
--- Atualizar lista de jogadores
 Players.PlayerAdded:Connect(function(plr)
-    if plr ~= LocalPlayer then
-        table.insert(playerList, plr.Name)
-    end
+    if plr ~= LocalPlayer then table.insert(playerList, plr.Name) end
 end)
 
 -- ============================================================
---  CONFIGURAÇÕES DE INTERFACE (Temas e Salvamento)
+--  INTERFACE (Temas + Save)
 -- ============================================================
-local UISettings = Tabs['UI Settings']
-local UILeft = UISettings:AddLeftGroupbox('Temas')
-local UIRight = UISettings:AddRightGroupbox('Configurações')
-
--- Gerenciador de temas
 ThemeManager:SetLibrary(Library)
 ThemeManager:ApplyToTab(Tabs['UI Settings'])
-
--- Gerenciador de salvamento
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({})
 SaveManager:BuildConfigSection(Tabs['UI Settings'])
 SaveManager:LoadAutoloadConfig()
 
--- ============================================================
---  NOTIFICAÇÃO DE CARREGAMENTO
--- ============================================================
 Library:Notify({
-    Title = 'Aura Hub',
-    Content = 'Carregado com sucesso! Aproveite.',
+    Title = 'Aura Hub' .. (isMobile and ' [Mobile]' or ''),
+    Content = 'Carregado com sucesso!',
     Duration = 5,
     Image = 'rbxassetid://243660364',
 })
 
--- ============================================================
---  FINALIZAÇÃO
--- ============================================================
-print('Aura Hub carregado.')
+print('[Aura Hub] Carregado. Plataforma: ' .. (isMobile and 'Mobile' or 'PC'))
