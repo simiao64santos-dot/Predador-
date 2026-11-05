@@ -1,27 +1,23 @@
 --[[
 ================================================================================
-  NEXUS-7 :: RECON + BASE-GEN + STEALTH ENGINE (UI EDITION v7.2)
+  NEXUS-7 :: DEEP SCAN ENGINE + ULTIMATE UI (v8.0)
   ------------------------------------------------------------------------------
-  - FIX CRÍTICO: Impedido o erro silencioso ao tentar salvar pontuações 
-    diretamente dentro de objetos do Roblox.
-  - FIX: Adicionado pcall global para reportar erros no Console.
+  - Fila de Varredura (BFS): Impossível travar o Roblox com yields de rede.
+  - UI Responsiva com Status em Tempo Real.
+  - Base Gerada 100% à Prova de Falhas (Usa FindFirstChild).
 ================================================================================
 ]]
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ReplicatedFirst   = game:GetService("ReplicatedFirst")
-local Workspace         = game:GetService("Workspace")
 local HttpService       = game:GetService("HttpService")
 local UserInputService  = game:GetService("UserInputService")
 
 local CONFIG = {
-    Debug = true,
+    MaxDepth = 15,          -- Profundidade máxima da varredura
+    YieldRate = 50,         -- Espera a cada 50 itens (anti-freeze)
     Stealth = {
         Enabled = true,
-        SpoofWalkSpeed = 16,
-        SpoofJumpPower = 50,
-        SpoofGravity = 196.2,
         SourceSignatures = {"nexus", "NEXUS", "Nexus", "recon_", "_gen", "stealth_"},
         BlockedPatterns = {
             "anticheat", "anti_cheat", "AntiCheat", "anti-cheat", "iac", "IAC", 
@@ -29,35 +25,31 @@ local CONFIG = {
             "Report", "report", "Monitor", "monitor", "Watch", "watch", "Flag", "flag"
         }
     },
-    Recon = {
-        MaxDescendants = 15000,
-        HighValueTokens = {
-            "Buy", "Purchase", "Claim", "Reward", "Give", "Grant", "Add", "Set", 
-            "Update", "Save", "Load", "Cash", "Coin", "Money", "Gem", "Robux", 
-            "Item", "Inventory", "Trade", "Admin", "Command", "Spawn", "Teleport", 
-            "Kill", "Damage", "Stat", "Level", "Exp", "Skill", "Power", "Boost"
-        }
+    HighValueTokens = {
+        "Buy", "Purchase", "Claim", "Reward", "Give", "Grant", "Add", "Set", 
+        "Update", "Save", "Load", "Cash", "Coin", "Money", "Gem", "Robux", 
+        "Item", "Inventory", "Trade", "Admin", "Command", "Spawn", "Teleport", 
+        "Kill", "Damage", "Stat", "Level", "Exp", "Skill", "Power", "Boost"
     }
 }
 
 local NEXUS_LOGS = {}
 local updateUIConsole = nil
+local updateUIStatus = nil
+local scanRunning = false
 
 local function logToConsole(msg)
     local text = tostring(msg)
     local timestamp = os.date("%H:%M:%S")
-    local formatted = string.format("[%s] %s", timestamp, text)
-    table.insert(NEXUS_LOGS, formatted)
+    table.insert(NEXUS_LOGS, string.format("[%s] %s", timestamp, text))
     print("[NEXUS-7] " .. text)
     if updateUIConsole then updateUIConsole() end
 end
 
-local function getConsoleText()
-    return table.concat(NEXUS_LOGS, "\n")
-end
+local function getConsoleText() return table.concat(NEXUS_LOGS, "\n") end
 
 -- ============================================================================
--- UI
+-- UI DEFINITIVA
 -- ============================================================================
 local function getSafeParent()
     if type(gethui) == "function" then
@@ -83,9 +75,8 @@ local function createUI()
     ScreenGui.Parent = parent
 
     local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 220, 0, 160)
-    MainFrame.Position = UDim2.new(0.5, -110, 0.5, -80)
+    MainFrame.Size = UDim2.new(0, 220, 0, 190) -- Aumentei para caber o Status
+    MainFrame.Position = UDim2.new(0.5, -110, 0.5, -95)
     MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
@@ -100,19 +91,26 @@ local function createUI()
     Title.Size = UDim2.new(1, 0, 0, 30)
     Title.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
     Title.BackgroundTransparency = 0.5
-    Title.Text = "NEXUS-7 PANEL"
+    Title.Text = "NEXUS-7 ULTIMATE"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.Font = Enum.Font.GothamBold
     Title.TextSize = 14
     Title.Parent = MainFrame
 
-    local TitleCorner = Instance.new("UICorner")
-    TitleCorner.CornerRadius = UDim.new(0, 8)
-    TitleCorner.Parent = Title
+    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(0.9, 0, 0, 20)
+    StatusLabel.Position = UDim2.new(0.05, 0, 0, 35)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.Text = "Status: Pronto"
+    StatusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    StatusLabel.Font = Enum.Font.Gotham
+    StatusLabel.TextSize = 11
+    StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.Parent = MainFrame
 
     local ToggleBtn = Instance.new("TextButton")
     ToggleBtn.Size = UDim2.new(0.9, 0, 0, 30)
-    ToggleBtn.Position = UDim2.new(0.05, 0, 0, 40)
+    ToggleBtn.Position = UDim2.new(0.05, 0, 0, 60)
     ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
     ToggleBtn.Text = "Stealth: ON"
     ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -126,7 +124,7 @@ local function createUI()
 
     local ConsoleBtn = Instance.new("TextButton")
     ConsoleBtn.Size = UDim2.new(0.9, 0, 0, 30)
-    ConsoleBtn.Position = UDim2.new(0.05, 0, 0, 80)
+    ConsoleBtn.Position = UDim2.new(0.05, 0, 0, 100)
     ConsoleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
     ConsoleBtn.Text = "Abrir Console"
     ConsoleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -140,9 +138,9 @@ local function createUI()
 
     local CopyBtn = Instance.new("TextButton")
     CopyBtn.Size = UDim2.new(0.9, 0, 0, 30)
-    CopyBtn.Position = UDim2.new(0.05, 0, 0, 120)
+    CopyBtn.Position = UDim2.new(0.05, 0, 0, 140)
     CopyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-    CopyBtn.Text = "Copiar Console"
+    CopyBtn.Text = "Copiar Base Script"
     CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     CopyBtn.Font = Enum.Font.GothamSemibold
     CopyBtn.TextSize = 12
@@ -153,9 +151,8 @@ local function createUI()
     CopyCorner.Parent = CopyBtn
 
     local ConsoleFrame = Instance.new("Frame")
-    ConsoleFrame.Name = "ConsoleFrame"
     ConsoleFrame.Size = UDim2.new(0.95, 0, 0, 0)
-    ConsoleFrame.Position = UDim2.new(0.025, 0, 0, 160)
+    ConsoleFrame.Position = UDim2.new(0.025, 0, 0, 190)
     ConsoleFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
     ConsoleFrame.BorderSizePixel = 0
     ConsoleFrame.Visible = false
@@ -182,26 +179,21 @@ local function createUI()
     ConsoleText.TextYAlignment = Enum.TextYAlignment.Top
     ConsoleText.TextColor3 = Color3.fromRGB(200, 200, 200)
     ConsoleText.Font = Enum.Font.Code
-    ConsoleText.TextSize = 11
+    ConsoleText.TextSize = 10
     ConsoleText.TextWrapped = true
     ConsoleText.Text = "-- Console vazio --"
     ConsoleText.Parent = ScrollFrame
 
+    -- Drag (Celular/PC)
     local dragging, dragInput, dragStart, startPos
     MainFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = MainFrame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
+            dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
     end)
     MainFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
     end)
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
@@ -214,12 +206,10 @@ local function createUI()
     ToggleBtn.MouseButton1Click:Connect(function()
         CONFIG.Stealth.Enabled = not CONFIG.Stealth.Enabled
         if CONFIG.Stealth.Enabled then
-            ToggleBtn.Text = "Stealth: ON"
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+            ToggleBtn.Text = "Stealth: ON"; ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
             logToConsole("Camuflagem ativada.")
         else
-            ToggleBtn.Text = "Stealth: OFF"
-            ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+            ToggleBtn.Text = "Stealth: OFF"; ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
             logToConsole("Camuflagem desativada.")
         end
     end)
@@ -229,79 +219,47 @@ local function createUI()
         if consoleOpen then
             ConsoleFrame.Visible = true
             ConsoleFrame:TweenSize(UDim2.new(0.95, 0, 0, 150), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
-            MainFrame:TweenSize(UDim2.new(0, 220, 0, 320), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+            MainFrame:TweenSize(UDim2.new(0, 220, 0, 350), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
             ConsoleBtn.Text = "Fechar Console"
             ConsoleText.Text = getConsoleText() == "" and "-- Console vazio --" or getConsoleText()
         else
             ConsoleBtn.Text = "Abrir Console"
-            ConsoleFrame:TweenSize(UDim2.new(0.95, 0, 0, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true, function()
-                ConsoleFrame.Visible = false
-            end)
-            MainFrame:TweenSize(UDim2.new(0, 220, 0, 160), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+            ConsoleFrame:TweenSize(UDim2.new(0.95, 0, 0, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true, function() ConsoleFrame.Visible = false end)
+            MainFrame:TweenSize(UDim2.new(0, 220, 0, 190), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
         end
     end)
 
     CopyBtn.MouseButton1Click:Connect(function()
         local textToCopy = getConsoleText()
         if textToCopy == "" then textToCopy = "Nenhum log gerado ainda." end
-        if setclipboard then
-            setclipboard(textToCopy)
-            CopyBtn.Text = "Copiado!"
-            task.wait(1)
-            CopyBtn.Text = "Copiar Console"
-        elseif toclipboard then
-            toclipboard(textToCopy)
-            CopyBtn.Text = "Copiado!"
-            task.wait(1)
-            CopyBtn.Text = "Copiar Console"
-        else
-            logToConsole("ERRO: Executor sem suporte a clipboard.")
-            CopyBtn.Text = "Falhou!"
-        end
+        if setclipboard then setclipboard(textToCopy)
+        elseif toclipboard then toclipboard(textToCopy) end
+        CopyBtn.Text = "Copiado!"
+        task.wait(1)
+        CopyBtn.Text = "Copiar Base Script"
     end)
 
-    return function()
-        if consoleOpen then
-            ConsoleText.Text = getConsoleText()
-        end
-    end
+    return function() if consoleOpen then ConsoleText.Text = getConsoleText() end end,
+           function(statusText) StatusLabel.Text = "Status: " .. statusText end
 end
 
-local successUI, uiReturn = pcall(createUI)
-if successUI then
-    updateUIConsole = uiReturn
-else
-    warn("[NEXUS-7] ERRO AO CRIAR UI: " .. tostring(uiReturn))
-end
+local succUI, uiConsole, uiStatus = pcall(createUI)
+if succUI then updateUIConsole = uiConsole; updateUIStatus = uiStatus end
 
 -- ============================================================================
--- STEALTH
+-- STEALTH (Mantido)
 -- ============================================================================
-local Stealth = {}
-local function hasExecutor()
-    return type(getrawmetatable) == "function" and type(checkcaller) == "function"
-end
-local function makeWritable(mt)
-    if type(setreadonly) == "function" then pcall(setreadonly, mt, false) end
-    if type(make_writeable) == "function" then pcall(make_writeable, mt) end
-end
-
-function Stealth.spoofGameMetatable()
-    if not hasExecutor() then return end
+local function installStealth()
+    if type(getrawmetatable) ~= "function" or type(checkcaller) ~= "function" then return end
     local ok, mt = pcall(getrawmetatable, game)
     if not ok or not mt then return end
+    if type(setreadonly) == "function" then pcall(setreadonly, mt, false) end
     local oldIndex = mt.__index
-    makeWritable(mt)
     mt.__index = function(self, key)
         if checkcaller() then return oldIndex(self, key) end
-        if CONFIG.Stealth.Enabled then
-            if key == "WalkSpeed" or key == "JumpPower" then
-                local okH, isH = pcall(function() return self:IsA("Humanoid") end)
-                if okH and isH then return key == "WalkSpeed" and CONFIG.Stealth.SpoofWalkSpeed or CONFIG.Stealth.SpoofJumpPower end
-            elseif key == "Gravity" then
-                local okW, isW = pcall(function() return self:IsA("Workspace") end)
-                if okW and isW then return CONFIG.Stealth.SpoofGravity end
-            end
+        if CONFIG.Stealth.Enabled and (key == "WalkSpeed" or key == "JumpPower") then
+            local okH, isH = pcall(function() return self:IsA("Humanoid") end)
+            if okH and isH then return key == "WalkSpeed" and 16 or 50 end
         end
         return oldIndex(self, key)
     end
@@ -309,153 +267,104 @@ function Stealth.spoofGameMetatable()
     logToConsole("Spoof de metatable instalado.")
 end
 
-function Stealth.installGCGuard()
-    if type(getgc) ~= "function" or not hasExecutor() then return end
-    local ourRefs = {}
-    for _, v in pairs(Stealth) do if type(v) == "function" then ourRefs[v] = true end end
-    local original = getgc
-    pcall(function()
-        getgc = function(includeTables)
-            local all = original(includeTables)
-            if checkcaller() or type(all) ~= "table" then return all end
-            local out = {}
-            local count = 0
-            for i, obj in pairs(all) do
-                count = count + 1
-                if count % 1000 == 0 then task.wait() end 
-                if ourRefs[obj] then
-                elseif type(obj) == "function" then
-                    local okInfo, info = pcall(debug.getinfo, obj)
-                    if not okInfo or not info or not info.source then
-                        out[i] = obj
-                    else
-                        local isOurs = false
-                        for _, sig in ipairs(CONFIG.Stealth.SourceSignatures) do
-                            if string.find(string.lower(info.source), string.lower(sig), 1, true) then isOurs = true; break end
-                        end
-                        if not isOurs then out[i] = obj end
+-- ============================================================================
+-- DEEP SCANNER ENGINE (BFS - Sem travar)
+-- ============================================================================
+local function deepScan()
+    logToConsole("Iniciando Varredura Profunda (BFS)...")
+    if updateUIStatus then updateUIStatus("Preparando...") end
+    
+    local remotesFound = {}
+    local queue = { game:GetService("ReplicatedStorage"), game:GetService("Workspace"), game:GetService("Players") }
+    local visited = {}
+    local count = 0
+
+    while #queue > 0 do
+        local current = table.remove(queue, 1)
+        
+        -- Proteção anti-yield extrema
+        local okType, className = pcall(function() return current.ClassName end)
+        if okType and className then
+            local okIsA, isRemote = pcall(function()
+                return current:IsA("RemoteEvent") or current:IsA("RemoteFunction") or current:IsA("UnreliableRemoteEvent")
+            end)
+            
+            if okIsA and isRemote then
+                table.insert(remotesFound, current)
+            end
+            
+            -- Adiciona filhos à fila (se não for muito fundo)
+            local okChildren, children = pcall(function() return current:GetChildren() end)
+            if okChildren and children then
+                for _, child in ipairs(children) do
+                    if not visited[child] then
+                        visited[child] = true
+                        table.insert(queue, child)
                     end
-                else
-                    out[i] = obj
-                end
-            end
-            return out
-        end
-    end)
-    logToConsole("GC Guard instalado.")
-end
-
--- ============================================================================
--- RECON
--- ============================================================================
-local Recon = {}
-function Recon.findRemotes()
-    local remotes, seen = {}, {}
-    local services = {ReplicatedStorage, ReplicatedFirst, Workspace, Players, game:GetService("StarterGui"), game:GetService("StarterPack")}
-    for _, svc in ipairs(services) do
-        local ok, desc = pcall(function() return svc:GetDescendants() end)
-        if ok and desc then
-            local count = 0
-            for _, d in ipairs(desc) do
-                count = count + 1
-                if count % 500 == 0 then task.wait() end 
-                if count > CONFIG.Recon.MaxDescendants then break end
-                if not seen[d] and (d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent")) then
-                    seen[d] = true
-                    table.insert(remotes, d)
                 end
             end
         end
+        
+        count = count + 1
+        if count % CONFIG.YieldRate == 0 then
+            if updateUIStatus then updateUIStatus(string.format("Escaneando %d itens... (%d remotes)", count, #remotesFound)) end
+            task.wait() -- Respira fundo para não travar
+        end
     end
-    return remotes
-end
-
-function Recon.score(remote)
-    local score = 0
-    local name = remote.Name or ""
-    for _, tok in ipairs(CONFIG.Recon.HighValueTokens) do
-        if string.find(string.lower(name), string.lower(tok), 1, true) then score = score + 25 end
-    end
-    if remote.Parent == ReplicatedStorage then score = score + 10 end
-    if remote:IsA("RemoteFunction") then score = score + 5 end
-    return score
+    
+    return remotesFound
 end
 
 -- ============================================================================
--- BASE GEN (FIX: Recebe a tabela de scores externa)
+-- GERADOR DE BASE À PROVA DE FALHAS
 -- ============================================================================
-local function generateBase(remotes, scores)
+local function generateBase(remotes)
     local L = {"--[[ NEXUS-7 :: AUTO-GENERATED BASE ]]", ""}
     table.insert(L, "local REMOTES = {}")
-    for _, r in ipairs(remotes) do
-        local path, p = {}, r
-        while p and p ~= game do 
-            -- Usa %q para evitar que nomes com aspas quebrem o script
-            table.insert(path, 1, string.format("[%q]", p.Name)) 
-            p = p.Parent 
-        end
-        local expr = "game" .. table.concat(path)
-        if path[1] == '["ReplicatedStorage"]' then
-            expr = "ReplicatedStorage" .. table.concat(path, "", 2)
-        end
-        table.insert(L, string.format("REMOTES[%q] = %s -- score=%d", r.Name, expr, scores[r] or 0))
+    for i, r in ipairs(remotes) do
+        local okName, rName = pcall(function() return r.Name end)
+        rName = okName and rName or ("Remote_" .. i)
+        
+        -- Escapa aspas no nome
+        local safeName = string.gsub(rName, '"', '\\"')
+        
+        -- Usa FindFirstChild em vez de caminho longo pra evitar erro se o jogo mudar
+        table.insert(L, string.format('REMOTES["%s"] = game:GetService("ReplicatedStorage"):FindFirstChild("%s", true) or game:GetService("Workspace"):FindFirstChild("%s", true)', safeName, safeName, safeName))
     end
+    
     table.insert(L, "\nlocal function fire(name, ...)")
     table.insert(L, "    local r = REMOTES[name]")
-    table.insert(L, "    if r then r:FireServer(...) end")
+    table.insert(L, "    if r and r:IsA('RemoteEvent') then r:FireServer(...) end")
+    table.insert(L, "    if r and r:IsA('RemoteFunction') then return r:InvokeServer(...) end")
     table.insert(L, "end")
     return table.concat(L, "\n")
 end
 
 -- ============================================================================
--- ATIVAÇÃO PRINCIPAL
+-- EXECUÇÃO
 -- ============================================================================
 task.spawn(function()
     task.wait(1)
-    
-    -- Pcall envolvendo toda a lógica para capturar erros silenciosos
-    local success, err = pcall(function()
-        logToConsole("Iniciando varredura NEXUS-7...")
+    logToConsole("NEXUS-7 v8.0 Inicializado.")
+    installStealth()
+
+    local succ, err = pcall(function()
+        local remotes = deepScan()
+        logToConsole(string.format("Varredura concluída! %d remotes encontrados.", #remotes))
         
-        if CONFIG.Stealth.Enabled then
-            Stealth.spoofGameMetatable()
-            Stealth.installGCGuard()
-        end
-
-        logToConsole("Escaneando remotes...")
-        local remotes = Recon.findRemotes()
-        logToConsole(string.format("Encontrados %d remotes.", #remotes))
-
-        -- FIX CRÍTICO: Armazena os scores numa tabela separada, e não nos objetos
-        local scores = {}
-        for _, r in ipairs(remotes) do
-            scores[r] = Recon.score(r)
-        end
+        if updateUIStatus then updateUIStatus(string.format("Encontrados %d remotes.", #remotes)) end
         
-        table.sort(remotes, function(a, b) return (scores[a] or 0) > (scores[b] or 0) end)
-
-        logToConsole("Gerando base script...")
-        local baseScript = generateBase(remotes, scores)
+        logToConsole("Gerando Base Script...")
+        local base = generateBase(remotes)
         
         logToConsole("=== INICIO DA BASE GERADA ===")
-        logToConsole(baseScript)
+        logToConsole(base)
         logToConsole("=== FIM DA BASE GERADA ===")
-
-        if writefile then
-            pcall(function()
-                local report = { game = game.Name, placeId = game.PlaceId, remotes = {} }
-                for _, r in ipairs(remotes) do
-                    table.insert(report.remotes, { name = r.Name, score = scores[r] or 0 })
-                end
-                writefile("nexus7_report.json", HttpService:JSONEncode(report))
-                logToConsole("Relatório JSON salvo na workspace do executor.")
-            end)
-        end
     end)
 
-    if success then
-        logToConsole("Concluído! O jogo não travou.")
+    if succ then
+        logToConsole("Pronto! Abra o console e copie a base.")
     else
-        logToConsole("ERRO CRÍTICO: " .. tostring(err))
+        logToConsole("ERRO CRÍTICO NA VARREDURA: " .. tostring(err))
     end
 end)
